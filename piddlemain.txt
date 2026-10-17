@@ -1325,9 +1325,8 @@ function Library:CreateWindow(options)
     return Window
 end
 
+_G.ZyronX = Library
 return Library
--- ============================================================
--- PIDDLE MM2 v33
 -- ============================================================
 
 local Library = _G.ZyronX or _G.Library
