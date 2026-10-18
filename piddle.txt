@@ -14,6 +14,7 @@ local Debris = game:GetService("Debris")
 local TeleportService = game:GetService("TeleportService")
 local Stats = game:GetService("Stats")
 local CoreGui = game:GetService("CoreGui")
+local MarketplaceService = game:GetService("MarketplaceService")
 
 local LocalPlayer = Players.LocalPlayer
 local WS = workspace
@@ -485,10 +486,32 @@ function Library:CreateWindow(cfg)
     New("Frame",{Size=UDim2.new(0,1,1,0),Position=UDim2.new(1,-1,0,0),BackgroundColor3=Theme.StrokeSoft,Parent=win.Sidebar})
     local logoHolder=New("Frame",{Size=UDim2.new(1,0,0,78),BackgroundTransparency=1,Parent=win.Sidebar})
     win.Logo=New("ImageLabel",{Size=UDim2.fromOffset(cfg.LogoSize or 56,cfg.LogoSize or 56),AnchorPoint=Vector2.new(0.5,0.5),Position=UDim2.fromScale(0.5,0.52),BackgroundTransparency=1,Image=ResolveImage(cfg.Logo),ImageColor3=Color3.new(1,1,1),ScaleType=Enum.ScaleType.Fit,Parent=logoHolder})
-    win.TabScroll=New("ScrollingFrame",{Size=UDim2.new(1,0,1,-78-46),Position=UDim2.fromOffset(0,78),BackgroundTransparency=1,CanvasSize=UDim2.new(),AutomaticCanvasSize=Enum.AutomaticSize.Y,ScrollBarThickness=0,ScrollingDirection=Enum.ScrollingDirection.Y,Parent=win.Sidebar})
+    win.TabScroll=New("ScrollingFrame",{Size=UDim2.new(1,0,1,-78-80),Position=UDim2.fromOffset(0,78),BackgroundTransparency=1,CanvasSize=UDim2.new(),AutomaticCanvasSize=Enum.AutomaticSize.Y,ScrollBarThickness=0,ScrollingDirection=Enum.ScrollingDirection.Y,Parent=win.Sidebar})
     win.TabList=New("Frame",{Size=UDim2.new(1,0,0,0),AutomaticSize=Enum.AutomaticSize.Y,BackgroundTransparency=1,Parent=win.TabScroll}); List(win.TabList,1)
-    local profile=New("Frame",{Size=UDim2.new(1,-12,0,36),Position=UDim2.new(0,6,1,-42),BackgroundColor3=Theme.Section,Parent=win.Sidebar})
+    
+    -- ПРОФИЛЬ ИГРОКА (Вместо пустой полосы)
+    local profile=New("Frame",{Size=UDim2.new(1,-12,0,68),Position=UDim2.new(0,6,1,-74),BackgroundColor3=Theme.Section,Parent=win.Sidebar})
     Corner(profile,6); Stroke(profile,Theme.StrokeSoft)
+    
+    local avatar=New("ImageLabel",{Size=UDim2.fromOffset(36,36),Position=UDim2.fromOffset(6,6),BackgroundColor3=Theme.Box,Image="",Parent=profile})
+    Corner(avatar,18)
+    task.spawn(function()
+        local ok, img = pcall(function() return Players:GetUserThumbnailAsync(LocalPlayer.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size48x48) end)
+        if ok and img then avatar.Image = img end
+    end)
+    
+    local nameLbl=Label({Size=UDim2.new(1,-50,0,14),Position=UDim2.fromOffset(48,6),Text=LocalPlayer.Name,Font=Theme.FontBold,TextColor3=Theme.Text,TextSize=11,TextXAlignment=Enum.TextXAlignment.Left,Parent=profile})
+    local roleLbl=Label({Size=UDim2.new(1,-50,0,12),Position=UDim2.fromOffset(48,20),Text="Role: --",Font=Theme.Font,TextColor3=Theme.Dim,TextSize=9,TextXAlignment=Enum.TextXAlignment.Left,Parent=profile})
+    local idLbl=Label({Size=UDim2.new(1,-50,0,12),Position=UDim2.fromOffset(48,32),Text="ID: "..LocalPlayer.UserId,Font=Theme.Font,TextColor3=Theme.Dimmer,TextSize=9,TextXAlignment=Enum.TextXAlignment.Left,Parent=profile})
+    local pingLbl=Label({Size=UDim2.new(1,-50,0,12),Position=UDim2.fromOffset(48,44),Text="Ping: --",Font=Theme.Font,TextColor3=Theme.Dimmer,TextSize=9,TextXAlignment=Enum.TextXAlignment.Left,Parent=profile})
+
+    local profileBtn = New("TextButton",{Size=UDim2.fromScale(1,1),BackgroundTransparency=1,Text="",Parent=profile})
+    Connect(profileBtn.MouseButton1Click, function()
+        playSound(Sounds.Click, 0.5)
+        pcall(function() setclipboard(tostring(LocalPlayer.UserId)) end)
+        Library:Notify({Title="Profile", Text="User ID copied to clipboard", Duration=3})
+    end)
+
     win.Content=New("Frame",{Size=UDim2.new(1,-sidebarW,1,0),Position=UDim2.fromOffset(sidebarW,0),BackgroundTransparency=1,Parent=win.Main})
     local search=New("Frame",{Size=UDim2.new(1,-12,0,28),Position=UDim2.fromOffset(6,6),BackgroundColor3=Theme.Section,Parent=win.Content}); Corner(search,6); Stroke(search,Theme.StrokeSoft)
     win.SearchBox=New("TextBox",{Size=UDim2.new(1,-40,1,0),Position=UDim2.fromOffset(10,0),BackgroundTransparency=1,Text="",PlaceholderText="Search...",TextColor3=Theme.Text,Font=Theme.Font,TextSize=11,ClearTextOnFocus=false,TextXAlignment=Enum.TextXAlignment.Left,Parent=search})
@@ -503,6 +526,7 @@ function Library:CreateWindow(cfg)
     win.Root.Visible=true
     local key=cfg.Keybind or Enum.KeyCode.RightShift
     Connect(UIS.InputBegan,function(input,processed) if processed then return end; if input.KeyCode==key then win:Toggle() end end)
+    
     return win
 end
 
@@ -697,6 +721,28 @@ if Win.Main then
     for _,c in ipairs(Win.Main:GetDescendants()) do
         if c:IsA("TextButton") and (c.Text=="X" or c.Text=="—") then c.Visible=false end
     end
+end
+
+-- Обновление профиля в UI
+local profileFrame = Win.Sidebar:GetChildren()[#Win.Sidebar:GetChildren()]
+if profileFrame and profileFrame:IsA("Frame") then
+    local roleLbl = profileFrame:FindFirstChild("Role") or profileFrame:GetChildren()[3] -- по индексу (RoleLbl)
+    local pingLbl = profileFrame:GetChildren()[5] -- по индексу (PingLbl)
+    task.spawn(function()
+        while true do
+            task.wait(1)
+            pcall(function()
+                if roleLbl and roleLbl:IsA("TextLabel") then 
+                    local r = getRole(LocalPlayer)
+                    roleLbl.Text = "Role: " .. r
+                    roleLbl.TextColor3 = roleColors[r] or Theme.Dim
+                end
+                if pingLbl and pingLbl:IsA("TextLabel") then 
+                    pingLbl.Text = "Ping: " .. math.floor(Stats.Network.ServerStatsItem["Data Ping"]:GetValue()) .. "ms"
+                end
+            end)
+        end
+    end)
 end
 
 local WmGui=New("ScreenGui",{Name="PiddleWatermark",ResetOnSpawn=false,IgnoreGuiInset=true,ZIndexBehavior=Enum.ZIndexBehavior.Sibling,DisplayOrder=1000})
@@ -1909,14 +1955,14 @@ HomeMain:AddButton({Name="reset character", Callback=function() if LocalPlayer.C
 HomeMain:AddButton({Name="rejoin server", Callback=function() pcall(function() TeleportService:Teleport(game.PlaceId, LocalPlayer) end) end})
 HomeMain:AddButton({Name="close ui", Callback=function() Win:SetVisible(false) end})
 local HomeInfo = HomeTab:AddSection({Name="info", Side="Right"})
-local roleLbl = HomeInfo:AddLabel({Name="role: --"})
-local pingLbl = HomeInfo:AddLabel({Name="ping: --"})
+local roleLbl2 = HomeInfo:AddLabel({Name="role: --"})
+local pingLbl2 = HomeInfo:AddLabel({Name="ping: --"})
 task.spawn(function()
     while true do
         task.wait(1)
         pcall(function()
-            roleLbl:SetText("role: "..getRole(LocalPlayer))
-            pingLbl:SetText("ping: "..math.floor(Stats.Network.ServerStatsItem["Data Ping"]:GetValue()).."ms")
+            roleLbl2:SetText("role: "..getRole(LocalPlayer))
+            pingLbl2:SetText("ping: "..math.floor(Stats.Network.ServerStatsItem["Data Ping"]:GetValue()).."ms")
         end)
     end
 end)
