@@ -1,4 +1,4 @@
-task.wait(1)
+task.wait(2)
 
 local Players = game:GetService("Players")
 local UIS = game:GetService("UserInputService")
@@ -942,28 +942,6 @@ task.spawn(function()
     end
 end)
 
-local function makeTracer(fromPos, toPos, color, thickness, lifetime)
-    if not CFG.bulletTracerOn then return end
-    local dist = (toPos-fromPos).Magnitude
-    if dist<0.5 then return end
-    lifetime = lifetime or CFG.bulletTracerLife
-    local part = Instance.new("Part")
-    part.Anchored=true; part.CanCollide=false; part.CanQuery=false; part.Transparency=1
-    part.Size=Vector3.new(0.05,0.05,dist)
-    part.CFrame=CFrame.lookAt(fromPos,toPos)*CFrame.new(0,0,-dist/2)
-    part.Parent=WS
-    local att0=Instance.new("Attachment",part); att0.Position=Vector3.new(0,0,dist/2)
-    local att1=Instance.new("Attachment",part); att1.Position=Vector3.new(0,0,-dist/2)
-    local beam=Instance.new("Beam",part)
-    beam.Attachment0=att0; beam.Attachment1=att1
-    beam.Width0=thickness*0.25; beam.Width1=thickness*0.25
-    beam.FaceCamera=true; beam.LightEmission=1; beam.LightInfluence=0
-    beam.Color=ColorSequence.new(color or CFG.bulletTracerColor)
-    beam.Transparency=NumberSequence.new({NumberSequenceKeypoint.new(0,0), NumberSequenceKeypoint.new(0.5,0.1), NumberSequenceKeypoint.new(1,0.8)})
-    TweenService:Create(beam, TweenInfo.new(lifetime, Enum.EasingStyle.Linear), {Width0=thickness*0.05, Width1=thickness*0.05, Transparency=NumberSequence.new(1)}):Play()
-    Debris:AddItem(part, lifetime+0.1)
-end
-
 local function fireGunWallbang(targetPos)
     local ch=LocalPlayer.Character; if not ch then return end
     local role=getRole(LocalPlayer)
@@ -1195,7 +1173,8 @@ OutfitSec:AddButton({Name="china hat on", Callback=function() CFG.chinaHatOn=tru
 OutfitSec:AddButton({Name="china hat off", Callback=function() CFG.chinaHatOn=false; saveCFG(); removeChinaHat() end})
 
 local SkinSec = PlayerTab:AddSection({Name="skin changer", Side="Right"})
-local knifeSkins={}; for k in pairs(SKINS.Knife) do table.insert(knifeSkins,k) endlocal gunSkins={}; for k in pairs(SKINS.Gun) do table.insert(gunSkins,k) end
+local knifeSkins={}; for k in pairs(SKINS.Knife) do table.insert(knifeSkins,k) end
+local gunSkins={}; for k in pairs(SKINS.Gun) do table.insert(gunSkins,k) end
 SkinSec:AddDropdown({Name="knife skin", Values=knifeSkins, Default=CFG.knifeSkin, Callback=function(v) CFG.knifeSkin=v; saveCFG(); applySkinNow("Knife",v) end})
 SkinSec:AddDropdown({Name="gun skin", Values=gunSkins, Default=CFG.gunSkin, Callback=function(v) CFG.gunSkin=v; saveCFG(); applySkinNow("Gun",v) end})
 
