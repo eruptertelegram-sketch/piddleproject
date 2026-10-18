@@ -1,9 +1,4 @@
--- PIDDLE MM2 v33
-
-if not game:IsLoaded() then
-    game.Loaded:Wait()
-end
-task.wait(2) -- Даем игре полностью прогрузиться
+task.wait(2)
 
 local success, err = pcall(function()
     local Players = game:GetService("Players")
@@ -399,12 +394,12 @@ local success, err = pcall(function()
         if state then
             self.Root.Visible=true
             Tween(self.UIScale,TWEEN_MED,{Scale=self._baseScale})
-            Tween(self.Main,TWEEN_MED,{GroupTransparency=0})
+            Tween(self.Main,TWEEN_MED,{BackgroundTransparency=0})
             if self.TopImg then self.TopImg.Visible = self._topImageOn ~= false end
         else
             self:_closePopup()
             Tween(self.UIScale,TWEEN_FAST,{Scale=self._baseScale*0.94})
-            Tween(self.Main,TWEEN_FAST,{GroupTransparency=1})
+            Tween(self.Main,TWEEN_FAST,{BackgroundTransparency=1})
             if self.TopImg then self.TopImg.Visible = false end
             task.delay(0.16,function() if not self.Visible and self.Root then self.Root.Visible=false end end)
         end
@@ -483,7 +478,7 @@ local success, err = pcall(function()
         win.TopImg = New("ImageLabel", {Name="TopImage", Size=UDim2.new(1,0,0,200), Position=UDim2.new(0,0,0,0), BackgroundTransparency=1, Visible=false, ScaleType=Enum.ScaleType.Fit, Parent=win.Root})
         win._topImageOn = true
         
-        win.Main=New("CanvasGroup",{Name="Main",Size=UDim2.fromOffset(size.X, size.Y), Position=UDim2.new(0,0,0,200), BackgroundColor3=Theme.Window,GroupTransparency=0,Parent=win.Root})
+        win.Main=New("Frame",{Name="Main",Size=UDim2.fromOffset(size.X, size.Y), Position=UDim2.new(0,0,0,200), BackgroundColor3=Theme.Window,Parent=win.Root})
         Corner(win.Main,8); Stroke(win.Main,Theme.Stroke,1)
         
         win.BgImage=New("ImageLabel",{Name="BgImage",Size=UDim2.fromScale(1,1),BackgroundTransparency=1,Image=ResolveImage(cfg.Background),ImageTransparency=0.4,ScaleType=Enum.ScaleType.Crop,ZIndex=0,Parent=win.Main}); Corner(win.BgImage,8)
