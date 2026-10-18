@@ -1,3 +1,8 @@
+if not game:IsLoaded() then
+    game.Loaded:Wait()
+end
+task.wait(1)
+
 local Library = { Version="1.0.0", Flags={}, Options={}, Windows={}, LowerCase=true, Connections={}, Unloaded=false }
 
 local Players = game:GetService("Players")
@@ -13,7 +18,6 @@ local VirtualUser = game:GetService("VirtualUser")
 local Debris = game:GetService("Debris")
 local TeleportService = game:GetService("TeleportService")
 local Stats = game:GetService("Stats")
-local CoreGui = game:GetService("CoreGui")
 local MarketplaceService = game:GetService("MarketplaceService")
 
 local LocalPlayer = Players.LocalPlayer
@@ -489,7 +493,6 @@ function Library:CreateWindow(cfg)
     win.TabScroll=New("ScrollingFrame",{Size=UDim2.new(1,0,1,-78-80),Position=UDim2.fromOffset(0,78),BackgroundTransparency=1,CanvasSize=UDim2.new(),AutomaticCanvasSize=Enum.AutomaticSize.Y,ScrollBarThickness=0,ScrollingDirection=Enum.ScrollingDirection.Y,Parent=win.Sidebar})
     win.TabList=New("Frame",{Size=UDim2.new(1,0,0,0),AutomaticSize=Enum.AutomaticSize.Y,BackgroundTransparency=1,Parent=win.TabScroll}); List(win.TabList,1)
     
-    -- ПРОФИЛЬ ИГРОКА (Вместо пустой полосы)
     local profile=New("Frame",{Size=UDim2.new(1,-12,0,68),Position=UDim2.new(0,6,1,-74),BackgroundColor3=Theme.Section,Parent=win.Sidebar})
     Corner(profile,6); Stroke(profile,Theme.StrokeSoft)
     
@@ -723,11 +726,10 @@ if Win.Main then
     end
 end
 
--- Обновление профиля в UI
 local profileFrame = Win.Sidebar:GetChildren()[#Win.Sidebar:GetChildren()]
 if profileFrame and profileFrame:IsA("Frame") then
-    local roleLbl = profileFrame:FindFirstChild("Role") or profileFrame:GetChildren()[3] -- по индексу (RoleLbl)
-    local pingLbl = profileFrame:GetChildren()[5] -- по индексу (PingLbl)
+    local roleLbl = profileFrame:GetChildren()[3]
+    local pingLbl = profileFrame:GetChildren()[5]
     task.spawn(function()
         while true do
             task.wait(1)
