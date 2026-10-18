@@ -1,4 +1,4 @@
-ocal Library = { Version="1.0.0", Flags={}, Options={}, Windows={}, LowerCase=true, Connections={}, Unloaded=false }
+local Library = { Version="1.0.0", Flags={}, Options={}, Windows={}, LowerCase=true, Connections={}, Unloaded=false }
 
 local Players = game:GetService("Players")
 local UIS = game:GetService("UserInputService")
