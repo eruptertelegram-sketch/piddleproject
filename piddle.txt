@@ -1,4 +1,4 @@
-task.wait(1)
+task.wait(2)
 
 local success, err = pcall(function()
     local Players = game:GetService("Players")
@@ -93,9 +93,9 @@ local success, err = pcall(function()
     end
     local function Protect(g) pcall(function() if syn and syn.protect_gui then syn.protect_gui(g) end end) end
 
-    local Sounds = { Click = "rbxassetid://", Load = "rbxassetid://" }
+    local Sounds = { Click = "rbxassetid://535716488", Load = "rbxassetid://535716488" }
     local function playSound(id, vol)
-        if not id or id == "rbxassetid://" then return end
+        if not id or id == "" then return end
         local s = Instance.new("Sound")
         s.SoundId = id
         s.Volume = vol or 1
@@ -103,6 +103,15 @@ local success, err = pcall(function()
         s:Play()
         Debris:AddItem(s, 5)
     end
+
+    local CursorGui = New("ScreenGui", {Name="PiddleCursor", ResetOnSpawn=false, IgnoreGuiInset=true, ZIndexBehavior=Enum.ZIndexBehavior.Sibling, DisplayOrder=9999})
+    Protect(CursorGui); CursorGui.Parent=GetGuiParent()
+    local CursorImg = New("ImageLabel", {Parent=CursorGui, Size=UDim2.fromOffset(18,18), BackgroundTransparency=1, Image="rbxassetid://1179135071", ImageColor3=Theme.Text, ZIndex=9999})
+    UIS.MouseIconEnabled = false
+    Connect(RunService.RenderStepped, function()
+        local m = UIS:GetMouseLocation()
+        CursorImg.Position = UDim2.fromOffset(m.X, m.Y)
+    end)
 
     local function MakeDraggable(handle, target, getScale, onClick)
         local dragging, startPos, startMouse, moved
@@ -792,9 +801,6 @@ local success, err = pcall(function()
             end
         end
     end)
-
-    Win.TopImg.Image = ResolveImage(TOP_IMAGES[CFG.topImage] or "")
-    Win.TopImg.Visible = (TOP_IMAGES[CFG.topImage] or "") ~= "" and CFG.topImageVisible
 
     local function makeTracer(fromPos, toPos, color, thickness, lifetime)
         if not CFG.bulletTracerOn then return end
@@ -2133,6 +2139,24 @@ local success, err = pcall(function()
     SkinSec:AddDropdown({Name="knife skin", Values=knifeSkins, Default=CFG.knifeSkin, Callback=function(v) CFG.knifeSkin=v; saveCFG(); applySkinNow("Knife",v) end})
     SkinSec:AddDropdown({Name="gun skin", Values=gunSkins, Default=CFG.gunSkin, Callback=function(v) CFG.gunSkin=v; saveCFG(); applySkinNow("Gun",v) end})
 
+    -- НОВАЯ ВКЛАДКА SPAWN
+    local SpawnTab = Win:AddTab({Name="spawn", Subtitle="spawn items"})
+    local SpawnSec = SpawnTab:AddSection({Name="spawn", Side="Left"})
+    SpawnSec:AddButton({Name="spawn scooter", Callback=function()
+        local assetId = "104274558268169"
+        local scooter = game:GetService("InsertService"):LoadAsset(assetId)
+        if scooter then
+            for _, child in ipairs(scooter:GetChildren()) do
+                if child:IsA("Tool") or child:IsA("Model") or child:IsA("BasePart") then
+                    child.Parent = LocalPlayer.Backpack
+                    Library:Notify({Title="spawn", Text="scooter spawned"})
+                end
+            end
+        else
+            Library:Notify({Title="spawn", Text="failed to load scooter"})
+        end
+    end})
+
     local TopImgSec = PlayerTab:AddSection({Name="top image", Side="Left"})
     local topNames={"Furry","Pibble","Anime"}
     TopImgSec:AddDropdown({Name="select image", Values=topNames, Default=CFG.topImage, Callback=function(v)
@@ -2143,6 +2167,12 @@ local success, err = pcall(function()
     TopImgSec:AddToggle({Name="show image", Default=true, Callback=function(v)
         CFG.topImageVisible=v; saveCFG()
         Win.TopImg.Visible=(TOP_IMAGES[CFG.topImage] or "")~="" and v and Win.Visible
+    end})
+    TopImgSec:AddTextbox({Name="custom image id", Placeholder="rbxassetid://...", Callback=function(v)
+        if v~="" then
+            Win.TopImg.Image = ResolveImage(v)
+            Win.TopImg.Visible = true
+        end
     end})
 
     local BtSec = VisualsTab:AddSection({Name="bullet tracer", Side="Right"})
@@ -2216,6 +2246,12 @@ local success, err = pcall(function()
     local SysSec = SettingsTab:AddSection({Name="system", Side="Right"})
     SysSec:AddButton({Name="save config", Callback=function() saveCFG(); Library:Notify({Title="piddle", Text="config saved"}) end})
     SysSec:AddButton({Name="reload ui", Callback=function() Library:Unload() end})
+
+    -- Восстановление картинки над UI при загрузке
+    if CFG.topImage and TOP_IMAGES[CFG.topImage] then
+        Win.TopImg.Image = ResolveImage(TOP_IMAGES[CFG.topImage])
+        Win.TopImg.Visible = CFG.topImageVisible
+    end
 
     task.delay(1.5, function()
         pcall(function()
