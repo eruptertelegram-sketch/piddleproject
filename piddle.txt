@@ -473,7 +473,7 @@ function Library:CreateWindow(cfg)
     New("Frame",{Size=UDim2.new(0,1,1,0),Position=UDim2.new(1,-1,0,0),BackgroundColor3=Theme.StrokeSoft,Parent=win.Sidebar})
     local logoHolder=New("Frame",{Size=UDim2.new(1,0,0,78),BackgroundTransparency=1,Parent=win.Sidebar})
     win.Logo=New("ImageLabel",{Size=UDim2.fromOffset(cfg.LogoSize or 56,cfg.LogoSize or 56),AnchorPoint=Vector2.new(0.5,0.5),Position=UDim2.fromScale(0.5,0.52),BackgroundTransparency=1,Image=ResolveImage(cfg.Logo),ImageColor3=Color3.new(1,1,1),ScaleType=Enum.ScaleType.Fit,Parent=logoHolder})
-    win.TabScroll=New("ScrollingFrame",{Size=UDim2.new(1,0,1,-78-80),Position=UDim2.fromOffset(0,78),BackgroundTransparency=1,CanvasSize=UDim2.new(),AutomaticCanvasSize=Enum.AutomaticSize.Y,ScrollBarThickness=0,ScrollingDirection=Enum.ScrollingDirection.Y,Parent=win.Sidebar})
+    win.TabScroll=New("ScrollingFrame",{Size=UDim2.new(1,0,1,-78-80),Position=UDim2.fromOffset(0,78),BackgroundTransparency=1,CanvasSize=UDim2.new(),AutomaticCanvasSize=Enum.AutomaticSize.Y,ScrollBarThickness=3,ScrollingDirection=Enum.ScrollingDirection.Y,Parent=win.Sidebar})
     win.TabList=New("Frame",{Size=UDim2.new(1,0,0,0),AutomaticSize=Enum.AutomaticSize.Y,BackgroundTransparency=1,Parent=win.TabScroll}); List(win.TabList,1)
     local profile=New("Frame",{Size=UDim2.new(1,-12,0,68),Position=UDim2.new(0,6,1,-74),BackgroundColor3=Theme.Section,Parent=win.Sidebar})
     Corner(profile,6); Stroke(profile,Theme.StrokeSoft)
@@ -500,7 +500,6 @@ function Library:CreateWindow(cfg)
     win.PopupLayer=New("Frame",{Size=UDim2.fromScale(1,1),BackgroundTransparency=1,ZIndex=50,Parent=win.Main})
     Connect(win.SearchBox:GetPropertyChangedSignal("Text"),function() win:_applySearch() end)
     MakeDraggable(logoHolder,win.Root,function() return win.UIScale.Scale end)
-    MakeDraggable(win.Sidebar,win.Root,function() return win.UIScale.Scale end)
     table.insert(self.Windows,win)
     win.Root.Visible=true
     local key=cfg.Keybind or Enum.KeyCode.RightShift
@@ -547,8 +546,8 @@ local EMOTES = {
 }
 
 local SKINS = {
-    Knife = { ["Default"]="rbxassetid://3576051114", ["Butterfly"]="rbxassetid://3320089857", ["Karambit"]="rbxassetid://3195201392", ["Bayonet"]="rbxassetid://629991297", ["Talon"]="rbxassetid://6668277225", ["M9"]="rbxassetid://6668278933" },
-    Gun = { ["Default"]="", ["AWP"]="rbxassetid://76990190751911", ["Sniper"]="rbxassetid://82599440413669", ["Laser"]="rbxassetid://132418108284167", ["Revolver"]="rbxassetid://92884130948621" },
+    Knife = { ["Default"]="", ["Butterfly"]="rbxassetid://6668273165", ["Karambit"]="rbxassetid://6668275534", ["Bayonet"]="rbxassetid://6668271507", ["Talon"]="rbxassetid://6668277225", ["M9"]="rbxassetid://6668278933" },
+    Gun = { ["Default"]="", ["AWP"]="rbxassetid://4885082101", ["Sniper"]="rbxassetid://4894000478", ["Laser"]="rbxassetid://8031987440", ["Revolver"]="rbxassetid://4885047554" },
 }
 
 local BG_LIST = { ["Halloween"]="rbxassetid://85303808547863", ["Anime"]="rbxassetid://83690600042971", ["None"]="" }
@@ -945,6 +944,15 @@ local function killAllRun()
     local char = plr.Character
     if not char then return end
     local knife = char:FindFirstChild("Knife")
+    if not knife then
+        local bpk = plr:FindFirstChild("Backpack") and plr.Backpack:FindFirstChild("Knife")
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if bpk and hum then
+            hum:EquipTool(bpk)
+            local t0 = os.clock()
+            repeat task.wait(0.05) knife = char:FindFirstChild("Knife") until knife or os.clock()-t0 > 1.5
+        end
+    end
     if not knife then return end
     local events = knife:FindFirstChild("Events")
     if not events then return end 
@@ -1181,43 +1189,47 @@ RunService.Heartbeat:Connect(function()
 end)
 
 -- ТВОЙ РОДНОЙ AUTO GET GUN
-local function findDroppedGun()
-    local nearest, nd = nil, 10000
-    local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-    if not hrp then return nil end
-    for _, o in ipairs(WS:GetDescendants()) do
-        if o:IsA("BasePart") and (o.Name:lower():find("gundrop") or o.Name=="Gun") then
-            local d=(o.Position-hrp.Position).Magnitude
-            if d<nd then nd=d; nearest=o end
-        end
-        if o:IsA("ProximityPrompt") and o.Parent and (o.Parent.Name:lower():find("gun") or o.Parent.Name:lower():find("drop")) then
-            local d = (o.Parent.Position - hrp.Position).Magnitude
-            if d<nd then nd=d; nearest=o end
-        end
+local GD={drop=nil,scan=0,conns={}}
+function GD.find()
+    for _,o in ipairs(WS:GetDescendants()) do
+        if o.Name=="GunDrop" then GD.drop=o; return o end
     end
-    return nearest
+end
+function GD.watch(on)
+    for _,c in ipairs(GD.conns) do pcall(function() c:Disconnect() end) end
+    GD.conns={}
+    if not on then GD.drop=nil; return end
+    GD.conns[1]=Connect(WS.DescendantAdded,function(o) if o.Name=="GunDrop" then GD.drop=o end end)
+    GD.conns[2]=Connect(WS.DescendantRemoving,function(o) if o==GD.drop then GD.drop=nil end end)
+    GD.find()
+end
+function GD.parts()
+    local d=GD.drop
+    if not d or not d.Parent then
+        GD.drop=nil
+        if os.clock()-GD.scan>1.25 then GD.scan=os.clock(); d=GD.find() else d=nil end
+    end
+    if not d then return nil end
+    local part=d:IsA("BasePart") and d or d:FindFirstChild("Handle") or d:FindFirstChildWhichIsA("BasePart",true)
+    local prompt=d:FindFirstChildWhichIsA("ProximityPrompt",true)
+    return part,prompt,d
 end
 local function grabDroppedGun()
-    local role = getRole(LocalPlayer)
-    if role == "Murderer" then return false end
-    if isRealNpc(LocalPlayer) then return false end
-    
-    local target = findDroppedGun()
-    if not target then return false end
-    local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if getRole(LocalPlayer)=="Murderer" or isRealNpc(LocalPlayer) then return false end
+    local hrp=LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
     if not hrp then return false end
-    if target:IsA("ProximityPrompt") then
-        pcall(function() fireproximityprompt(target) end)
-        return true
-    end
-    hrp.CFrame = target.CFrame + Vector3.new(0,2,0)
-    local ft = firetouchinterest or (syn and syn.firetouchinterest)
-    if ft then pcall(function() ft(hrp, target, 0) end) end
-    for _,r in ipairs(ReplicatedStorage:GetDescendants()) do
-        if r:IsA("RemoteEvent") then
-            local n=r.Name:lower()
-            if n:find("pick") or n:find("gun") or n:find("interact") or n:find("drop") then
-                pcall(function() r:FireServer(target) end)
+    local part,prompt,drop=GD.parts()
+    if not part then return false end
+    if prompt and fireproximityprompt then pcall(fireproximityprompt,prompt) end
+    local ft=firetouchinterest or (syn and syn.firetouchinterest)
+    if ft then pcall(function() ft(hrp,part,0); task.wait(); ft(hrp,part,1) end) end
+    if not hasItem(LocalPlayer,"Gun") then
+        for _,r in ipairs(ReplicatedStorage:GetDescendants()) do
+            if r:IsA("RemoteEvent") then
+                local n=r.Name:lower()
+                if n:find("pick") or n:find("gun") or n:find("interact") or n:find("drop") then
+                    pcall(function() r:FireServer(drop) end)
+                end
             end
         end
     end
@@ -1998,7 +2010,7 @@ FarmSec:AddToggle({Name="anti-afk", Callback=function(state)
         end)
     end
 end})
-FarmSec:AddToggle({Name="auto get gun", Callback=function(v) State.autoGun=v end})
+FarmSec:AddToggle({Name="auto get gun", Callback=function(v) State.autoGun=v; GD.watch(v) end})
 FarmSec:AddSlider({Name="farm speed", Min=10, Max=200, Default=23, Callback=function(v) State.farmSpeed=v end})
 
 local TpTab = Win:AddTab({Name="teleport", Subtitle="tp"})
@@ -2047,7 +2059,6 @@ local MiscSec = MiscTab:AddSection({Name="auto", Side="Left"})
 MiscSec:AddToggle({Name="auto-respawn", Callback=function(o) State.autoRespawn=o end})
 MiscSec:AddToggle({Name="fast-respawn", Callback=function(o) State.fastRespawn=o end})
 MiscSec:AddToggle({Name="anti-void", Callback=function(o) State.antiVoid=o end})
-MiscSec:AddToggle({Name="anti-fling", Default=true, Callback=function(o) AF.on=o end})
 
 local WarnTab = Win:AddTab({Name="warnings", Subtitle="notifications"})
 local WarnSec = WarnTab:AddSection({Name="notifications", Side="Left"})
@@ -2128,27 +2139,171 @@ BtSec:AddColorPicker({Name="tracer color", Default=Color3.fromRGB(255,220,80), C
 BtSec:AddSlider({Name="tracer life", Min=1, Max=10, Default=5, Callback=function(v) CFG.bulletTracerLife=v; saveCFG() end})
 
 do
-local VoteTab = Win:AddTab({Name="vote", Subtitle="vote duper"})
-local VoteSec = VoteTab:AddSection({Name="vote duper", Side="Left"})
-local mapNames={}; for k in pairs(MAP_CARDS) do table.insert(mapNames,k) end; table.sort(mapNames)
-local mapDropdown = VoteSec:AddDropdown({Name="select map", Values=mapNames, Default="Map 1"})
+local MV={auto=false,dupe=false,cap=3,pick=1,running=false,session=0,used=0,mark=0,conns={},origin=nil,spot=nil,wasEn=false}
 
-local cardRow = New("Frame", {Size=UDim2.new(1,0,0,60), BackgroundTransparency=1, Parent=VoteSec.Holder})
-local cardList = New("UIListLayout", {FillDirection=Enum.FillDirection.Horizontal, Padding=UDim.new(0,6), HorizontalAlignment=Enum.HorizontalAlignment.Center, Parent=cardRow})
-for _, mapName in ipairs(mapNames) do
-    local card = MAP_CARDS[mapName]
-    local imgFrame = New("TextButton", {Size=UDim2.fromOffset(60,60), BackgroundColor3=Theme.Box, Text="", Parent=cardRow})
-    Corner(imgFrame, 8); Stroke(imgFrame, Theme.Stroke)
-    local aspect = New("UIAspectRatioConstraint", {AspectRatio=1, AspectType=Enum.AspectType.FitWithinMaxSize, Parent=imgFrame})
-    local img = New("ImageLabel", {Size=UDim2.fromScale(1,1), BackgroundTransparency=1, Image=ResolveImage(card.image), ScaleType=Enum.ScaleType.Crop, Parent=imgFrame})
-    Corner(img, 8)
-    local lbl = New("TextLabel", {Size=UDim2.new(1,0,0.25,0), Position=UDim2.new(0,0,0.75,0), BackgroundColor3=Theme.Window, BackgroundTransparency=0.2, Text=mapName, TextColor3=Theme.Text, Font=Theme.FontBold, TextSize=10, Parent=imgFrame})
-    Corner(lbl, 8)
-    Connect(imgFrame.MouseButton1Click, function() mapDropdown:Set(mapName) end)
+local function mvVotePads()
+    for _,n in ipairs({"SummerLobby","Lobby"}) do
+        local r=WS:FindFirstChild(n)
+        local vp=r and r:FindFirstChild("VotePads")
+        if vp then return vp end
+    end
+end
+local function padPos(p) return p:IsA("BasePart") and p.Position or p:GetPivot().Position end
+local function padSpot(p) return padPos(p)+Vector3.new(0,(p:IsA("BasePart") and p.Size.Y/2 or 0)+3,0) end
+local function tallyOf(e) return tonumber(tostring(e.tally.Text):match("%d+")) or 0 end
+
+local function mvPads()
+    local out={}
+    local vp=mvVotePads()
+    if not vp then return out end
+    for _,m in ipairs(vp:GetChildren()) do
+        local pad=m:FindFirstChild("Pad")
+        local info=m:FindFirstChild("MapInfoGui")
+        local vote=m:FindFirstChild("VoteInfoGui")
+        local icon=info and info:FindFirstChild("MapIcon")
+        local box=vote and vote:FindFirstChild("Container")
+        local title=box and box:FindFirstChild("MapName")
+        local tally=box and box:FindFirstChild("Votes")
+        if pad and info and icon and title and tally then out[#out+1]={pad=pad,info=info,icon=icon,title=title,tally=tally} end
+    end
+    table.sort(out,function(a,b) return padPos(a.pad).X>padPos(b.pad).X end)
+    return out
 end
 
-VoteSec:AddButton({Name="start duper", Callback=function() local sel=mapDropdown:Get(); local idx=(sel=="Map 1" and 1) or (sel=="Map 2" and 2) or 3; VOTE.target=idx; VOTE.on=true; Library:Notify({Title="vote", Text="started: "..sel}) end})
-VoteSec:AddButton({Name="stop duper", Callback=function() VOTE.on=false; Library:Notify({Title="vote", Text="stopped"}) end})
+local function mvDrop()
+    for k,c in pairs(MV.conns) do pcall(function() c:Disconnect() end); MV.conns[k]=nil end
+end
+local function mvBack()
+    local ch=LocalPlayer.Character
+    local hrp=ch and ch:FindFirstChild("HumanoidRootPart")
+    if hrp and MV.origin then
+        local hum=ch:FindFirstChildWhichIsA("Humanoid")
+        if hum then pcall(function() hum:ChangeState(Enum.HumanoidStateType.Physics) end) end
+        hrp.CFrame=MV.origin
+        task.delay(0.05,function()
+            local c=LocalPlayer.Character
+            local h=c and c:FindFirstChildWhichIsA("Humanoid")
+            if h then pcall(function() h:ChangeState(Enum.HumanoidStateType.Running) end) end
+        end)
+    end
+end
+local function mvFinish(back)
+    MV.session=MV.session+1
+    mvDrop()
+    if back then mvBack() end
+    MV.running=false; MV.spot=nil
+end
+local function killSelf()
+    local ch=LocalPlayer.Character
+    if ch then pcall(function() ch:BreakJoints() end) end
+end
+
+local function mvBegin()
+    if MV.running then return false end
+    local entry=mvPads()[MV.pick]
+    if not entry or not entry.info.Enabled then return false end
+    local ch=LocalPlayer.Character
+    local hrp=ch and ch:FindFirstChild("HumanoidRootPart")
+    if not hrp then return false end
+    MV.session=MV.session+1
+    local id=MV.session
+    MV.running=true; MV.used=0; MV.mark=tallyOf(entry)
+    MV.origin=hrp.CFrame; MV.spot=padSpot(entry.pad)
+    hrp.CFrame=CFrame.new(MV.spot)
+
+    if not MV.dupe then
+        task.delay(0.15,function() if MV.session==id then mvFinish(true) end end)
+        return true
+    end
+
+    MV.conns.hold=Connect(RunService.Heartbeat,function()
+        if MV.session~=id or not MV.spot then return end
+        if not entry.info.Enabled then mvFinish(true); return end
+        local c=LocalPlayer.Character
+        local h=c and c:FindFirstChild("HumanoidRootPart")
+        if not h then return end
+        local flat=Vector3.new(h.Position.X-MV.spot.X,0,h.Position.Z-MV.spot.Z)
+        if flat.Magnitude>2.5 then h.CFrame=CFrame.new(MV.spot) end
+    end)
+
+    MV.conns.tally=Connect(entry.tally:GetPropertyChangedSignal("Text"),function()
+        if MV.session~=id or not MV.dupe then return end
+        local now=tallyOf(entry)
+        if now<=MV.mark then MV.mark=now; return end
+        MV.mark=now
+        if MV.used>=MV.cap then
+            mvDrop()
+            task.defer(function() if MV.session==id then mvFinish(true) end end)
+            return
+        end
+        MV.used=MV.used+1
+        killSelf()
+    end)
+
+    MV.conns.spawn=Connect(LocalPlayer.CharacterAdded,function(char)
+        if MV.session~=id or not MV.dupe then return end
+        local h=char:WaitForChild("HumanoidRootPart",6)
+        if not h or MV.session~=id or not entry.info.Enabled or not MV.spot then return end
+        if MV.used>=MV.cap then mvFinish(true); return end
+        h.CFrame=CFrame.new(MV.spot)
+    end)
+    return true
+end
+
+local MapTab=Win:AddTab({Name="map vote",Subtitle="vote duper"})
+local MapSec=MapTab:AddSection({Name="maps",Side="Left"})
+local cards={}
+for i=1,3 do
+    local row=MapSec:_row(58)
+    local btn=New("TextButton",{Size=UDim2.new(1,-12,0,52),Position=UDim2.new(0,6,0.5,-26),BackgroundColor3=Theme.Box,Text="",Parent=row})
+    Corner(btn,6); local st=Stroke(btn,Theme.Stroke)
+    local img=New("ImageLabel",{Size=UDim2.fromOffset(44,44),Position=UDim2.fromOffset(4,4),BackgroundColor3=Theme.Row,Image="",ScaleType=Enum.ScaleType.Crop,Parent=btn}); Corner(img,5)
+    local nm=Label({Size=UDim2.new(1,-56,0,16),Position=UDim2.fromOffset(54,8),Text="waiting...",TextColor3=Theme.Text,Font=Theme.FontBold,TextSize=10,TextTruncate=Enum.TextTruncate.AtEnd,Parent=btn})
+    local vt=Label({Size=UDim2.new(1,-56,0,14),Position=UDim2.fromOffset(54,28),Text="votes: -",TextColor3=Theme.Dim,TextSize=9,Parent=btn})
+    Connect(btn.MouseButton1Click,function() playSound(Sounds.Click,0.5); MV.pick=i end)
+    cards[i]={st=st,img=img,nm=nm,vt=vt}
+end
+
+local CtlSec=MapTab:AddSection({Name="duper",Side="Right"})
+CtlSec:AddToggle({Name="auto vote",Default=false,Callback=function(v)
+    MV.auto=v; MV.wasEn=false
+    if not v and MV.running then mvFinish(true) end
+end})
+CtlSec:AddToggle({Name="dupe",Default=false,Callback=function(v)
+    MV.dupe=v
+    if not v and MV.running then mvFinish(true) end
+end})
+CtlSec:AddSlider({Name="dupe count",Min=1,Max=10,Default=3,Callback=function(v) MV.cap=v end})
+CtlSec:AddButton({Name="vote now",Callback=function()
+    if not mvBegin() then Library:Notify({Title="vote",Text="no active vote pad"}) end
+end})
+CtlSec:AddButton({Name="stop",Callback=function() if MV.running then mvFinish(true) end end})
+
+task.spawn(function()
+    while not Library.Unloaded do
+        local pads=mvPads()
+        for i=1,3 do
+            local c,e=cards[i],pads[i]
+            if e then
+                c.img.Image=e.icon.Image; c.nm.Text=e.title.Text; c.vt.Text="votes: "..tostring(e.tally.Text)
+            else
+                c.img.Image=""; c.nm.Text="waiting..."; c.vt.Text="votes: -"
+            end
+            c.st.Color=(MV.pick==i) and Theme.Accent or Theme.Stroke
+        end
+        local sel=pads[MV.pick]
+        local en=sel and sel.info.Enabled or false
+        if MV.auto and en and not MV.wasEn and not MV.running then mvBegin() end
+        MV.wasEn=en
+        task.wait(0.25)
+    end
+end)
+end
+
+do
+local AFTab=Win:AddTab({Name="anti fling",Subtitle="protection"})
+local AFSec=AFTab:AddSection({Name="anti fling",Side="Left"})
+AFSec:AddToggle({Name="anti-fling",Default=AF.on,Callback=function(v) AF.on=v end})
 end
 
 do
@@ -2221,6 +2376,9 @@ LocalPlayer.CharacterAdded:Connect(function()
         if CFG.selectedPack then applyPack(CFG.selectedPack) end
     end)
 end)
+for n,o in pairs({["map vote"]=-3,["anti fling"]=-2,["settings"]=-1}) do
+    for _,tb in ipairs(Win.Tabs) do if tb.Name==n then tb.Group.LayoutOrder=o end end
+end
 task.delay(0.8, function() Library:Notify({Title="piddle", Text="loaded successfully", Duration=5}) end)
-task.delay(2.5, function() Library:Notify({Title="piddle", Text="click watermark to toggle ui/нажми на ватермарк чтобы открыть основное окно скрипта", Duration=5}) end)
+task.delay(2.5, function() Library:Notify({Title="piddle", Text="click watermark to toggle ui", Duration=5}) end)
 warn("[PIDDLE] Loaded")
