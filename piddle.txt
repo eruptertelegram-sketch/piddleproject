@@ -1,5 +1,4 @@
 task.wait(2)
-
 local Players = game:GetService("Players")
 local UIS = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
@@ -60,7 +59,6 @@ local function FormatNumber(v,s)
     return tostring(math.floor(v+0.5))
 end
 
--- УПРОЩЕННАЯ ЗАГРУЗКА КАРТИНОК (БЕЗ getcustomasset)
 local function ResolveImage(src)
     if src==nil or src=="" then return "" end
     if typeof(src)=="number" then return "rbxassetid://"..src end
@@ -463,16 +461,12 @@ function Library:CreateWindow(cfg)
     local win=setmetatable({Tabs={},Visible=true,Library=self,_dragLocked=false},Window)
     local size=cfg.Size or Vector2.new(420,440)
     local sidebarW=cfg.SidebarWidth or 130
-    
     win.Root = New("Frame",{Name="Root", Size=UDim2.fromOffset(size.X, size.Y + 200), AnchorPoint=Vector2.new(0.5,0.5), Position=cfg.Position or UDim2.fromScale(0.5,0.5), BackgroundTransparency=1, Parent=self.Gui})
     win.UIScale=New("UIScale",{Scale=1,Parent=win.Root}); win._baseScale=1
-    
     win.TopImg = New("ImageLabel", {Name="TopImage", Size=UDim2.new(1,0,0,200), Position=UDim2.new(0,0,0,0), BackgroundTransparency=1, Visible=false, ScaleType=Enum.ScaleType.Fit, Parent=win.Root})
     win._topImageOn = true
-    
     win.Main=New("Frame",{Name="Main",Size=UDim2.fromOffset(size.X, size.Y), Position=UDim2.new(0,0,0,200), BackgroundColor3=Theme.Window,Parent=win.Root})
     Corner(win.Main,8); Stroke(win.Main,Theme.Stroke,1)
-    
     win.BgImage=New("ImageLabel",{Name="BgImage",Size=UDim2.fromScale(1,1),BackgroundTransparency=1,Image=ResolveImage(cfg.Background),ImageTransparency=0.4,ScaleType=Enum.ScaleType.Crop,ZIndex=0,Parent=win.Main}); Corner(win.BgImage,8)
     win.Sidebar=New("Frame",{Size=UDim2.new(0,sidebarW,1,0),BackgroundColor3=Theme.Sidebar,BackgroundTransparency=0.2,ZIndex=1,Parent=win.Main})
     New("Frame",{Size=UDim2.new(0,1,1,0),Position=UDim2.new(1,-1,0,0),BackgroundColor3=Theme.StrokeSoft,Parent=win.Sidebar})
@@ -480,44 +474,36 @@ function Library:CreateWindow(cfg)
     win.Logo=New("ImageLabel",{Size=UDim2.fromOffset(cfg.LogoSize or 56,cfg.LogoSize or 56),AnchorPoint=Vector2.new(0.5,0.5),Position=UDim2.fromScale(0.5,0.52),BackgroundTransparency=1,Image=ResolveImage(cfg.Logo),ImageColor3=Color3.new(1,1,1),ScaleType=Enum.ScaleType.Fit,Parent=logoHolder})
     win.TabScroll=New("ScrollingFrame",{Size=UDim2.new(1,0,1,-78-80),Position=UDim2.fromOffset(0,78),BackgroundTransparency=1,CanvasSize=UDim2.new(),AutomaticCanvasSize=Enum.AutomaticSize.Y,ScrollBarThickness=0,ScrollingDirection=Enum.ScrollingDirection.Y,Parent=win.Sidebar})
     win.TabList=New("Frame",{Size=UDim2.new(1,0,0,0),AutomaticSize=Enum.AutomaticSize.Y,BackgroundTransparency=1,Parent=win.TabScroll}); List(win.TabList,1)
-    
     local profile=New("Frame",{Size=UDim2.new(1,-12,0,68),Position=UDim2.new(0,6,1,-74),BackgroundColor3=Theme.Section,Parent=win.Sidebar})
     Corner(profile,6); Stroke(profile,Theme.StrokeSoft)
-    
     local avatar=New("ImageLabel",{Size=UDim2.fromOffset(36,36),Position=UDim2.fromOffset(6,6),BackgroundColor3=Theme.Box,Image="",Parent=profile})
     Corner(avatar,18)
     task.spawn(function()
         local ok, img = pcall(function() return Players:GetUserThumbnailAsync(LocalPlayer.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size48x48) end)
         if ok and img then avatar.Image = img end
     end)
-    
     local nameLbl=Label({Size=UDim2.new(1,-50,0,14),Position=UDim2.fromOffset(48,6),Text=LocalPlayer.Name,Font=Theme.FontBold,TextColor3=Theme.Text,TextSize=11,TextXAlignment=Enum.TextXAlignment.Left,Parent=profile})
     local roleLbl=Label({Size=UDim2.new(1,-50,0,12),Position=UDim2.fromOffset(48,20),Text="Role: --",Font=Theme.Font,TextColor3=Theme.Dim,TextSize=9,TextXAlignment=Enum.TextXAlignment.Left,Parent=profile})
     local idLbl=Label({Size=UDim2.new(1,-50,0,12),Position=UDim2.fromOffset(48,32),Text="ID: "..LocalPlayer.UserId,Font=Theme.Font,TextColor3=Theme.Dimmer,TextSize=9,TextXAlignment=Enum.TextXAlignment.Left,Parent=profile})
     local pingLbl=Label({Size=UDim2.new(1,-50,0,12),Position=UDim2.fromOffset(48,44),Text="Ping: --",Font=Theme.Font,TextColor3=Theme.Dimmer,TextSize=9,TextXAlignment=Enum.TextXAlignment.Left,Parent=profile})
-
     local profileBtn = New("TextButton",{Size=UDim2.fromScale(1,1),BackgroundTransparency=1,Text="",Parent=profile})
     Connect(profileBtn.MouseButton1Click, function()
         playSound(Sounds.Click, 0.5)
         pcall(function() setclipboard(tostring(LocalPlayer.UserId)) end)
         Library:Notify({Title="Profile", Text="User ID copied to clipboard", Duration=3})
     end)
-
     win.Content=New("Frame",{Size=UDim2.new(1,-sidebarW,1,0),Position=UDim2.fromOffset(sidebarW,0),BackgroundTransparency=1,Parent=win.Main})
     local search=New("Frame",{Size=UDim2.new(1,-12,0,28),Position=UDim2.fromOffset(6,6),BackgroundColor3=Theme.Section,Parent=win.Content}); Corner(search,6); Stroke(search,Theme.StrokeSoft)
     win.SearchBox=New("TextBox",{Size=UDim2.new(1,-40,1,0),Position=UDim2.fromOffset(10,0),BackgroundTransparency=1,Text="",PlaceholderText="Search...",TextColor3=Theme.Text,Font=Theme.Font,TextSize=11,ClearTextOnFocus=false,TextXAlignment=Enum.TextXAlignment.Left,Parent=search})
     win.PageHolder=New("Frame",{Size=UDim2.new(1,-12,1,-46),Position=UDim2.fromOffset(6,40),BackgroundTransparency=1,Parent=win.Content})
     win.PopupLayer=New("Frame",{Size=UDim2.fromScale(1,1),BackgroundTransparency=1,ZIndex=50,Parent=win.Main})
     Connect(win.SearchBox:GetPropertyChangedSignal("Text"),function() win:_applySearch() end)
-    
     MakeDraggable(logoHolder,win.Root,function() return win.UIScale.Scale end)
     MakeDraggable(win.Sidebar,win.Root,function() return win.UIScale.Scale end)
-    
     table.insert(self.Windows,win)
     win.Root.Visible=true
     local key=cfg.Keybind or Enum.KeyCode.RightShift
     Connect(UIS.InputBegan,function(input,processed) if processed then return end; if input.KeyCode==key then win:Toggle() end end)
-    
     return win
 end
 
@@ -533,7 +519,6 @@ function Library:Unload()
     UIS.MouseIconEnabled = true
 end
 
--- АССЕТЫ (ПРЯМЫЕ ССЫЛКИ)
 local ASSETS = {
     logo = "rbxassetid://116621850916845",
     header_icon = "rbxassetid://139363965217986",
@@ -2232,4 +2217,4 @@ LocalPlayer.CharacterAdded:Connect(function()
 end)
 task.delay(0.8, function() Library:Notify({Title="piddle", Text="loaded successfully", Duration=5}) end)
 task.delay(2.5, function() Library:Notify({Title="piddle", Text="click watermark to toggle ui", Duration=5}) end)
-warn("[PIDDLE] Loaded")
+warn("[PIDDLE] loaded, hope you'll enjoy it")
