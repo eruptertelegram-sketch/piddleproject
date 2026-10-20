@@ -1,4 +1,4 @@
-task.wait(2)
+task.wait(1)
 
 local Players = game:GetService("Players")
 local UIS = game:GetService("UserInputService")
@@ -547,8 +547,8 @@ local EMOTES = {
 }
 
 local SKINS = {
-    Knife = { ["Default"]="", ["Butterfly"]="rbxassetid://6668273165", ["Karambit"]="rbxassetid://6668275534", ["Bayonet"]="rbxassetid://6668271507", ["Talon"]="rbxassetid://6668277225", ["M9"]="rbxassetid://6668278933" },
-    Gun = { ["Default"]="", ["AWP"]="rbxassetid://4885082101", ["Sniper"]="rbxassetid://4894000478", ["Laser"]="rbxassetid://8031987440", ["Revolver"]="rbxassetid://4885047554" },
+    Knife = { ["Default"]="rbxassetid://3576051114", ["Butterfly"]="rbxassetid://3320089857", ["Karambit"]="rbxassetid://3195201392", ["Bayonet"]="rbxassetid://629991297", ["Talon"]="rbxassetid://6668277225", ["M9"]="rbxassetid://6668278933" },
+    Gun = { ["Default"]="", ["AWP"]="rbxassetid://76990190751911", ["Sniper"]="rbxassetid://82599440413669", ["Laser"]="rbxassetid://132418108284167", ["Revolver"]="rbxassetid://92884130948621" },
 }
 
 local BG_LIST = { ["Halloween"]="rbxassetid://85303808547863", ["Anime"]="rbxassetid://83690600042971", ["None"]="" }
@@ -2127,6 +2127,7 @@ BtSec:AddToggle({Name="enable tracer", Default=true, Callback=function(v) CFG.bu
 BtSec:AddColorPicker({Name="tracer color", Default=Color3.fromRGB(255,220,80), Callback=function(c) CFG.bulletTracerColor=c; saveCFG() end})
 BtSec:AddSlider({Name="tracer life", Min=1, Max=10, Default=5, Callback=function(v) CFG.bulletTracerLife=v; saveCFG() end})
 
+do
 local VoteTab = Win:AddTab({Name="vote", Subtitle="vote duper"})
 local VoteSec = VoteTab:AddSection({Name="vote duper", Side="Left"})
 local mapNames={}; for k in pairs(MAP_CARDS) do table.insert(mapNames,k) end; table.sort(mapNames)
@@ -2148,7 +2149,9 @@ end
 
 VoteSec:AddButton({Name="start duper", Callback=function() local sel=mapDropdown:Get(); local idx=(sel=="Map 1" and 1) or (sel=="Map 2" and 2) or 3; VOTE.target=idx; VOTE.on=true; Library:Notify({Title="vote", Text="started: "..sel}) end})
 VoteSec:AddButton({Name="stop duper", Callback=function() VOTE.on=false; Library:Notify({Title="vote", Text="stopped"}) end})
+end
 
+do
 local TradeTab = Win:AddTab({Name="trade", Subtitle="calculator"})
 local TradeSec = TradeTab:AddSection({Name="trade calculator", Side="Left"})
 local myTotal,hisTotal=0,0
@@ -2161,6 +2164,7 @@ TradeSec:AddButton({Name="add his", Callback=function() local item=findTradeItem
 TradeSec:AddButton({Name="clear", Callback=function() myItems={}; hisItems={}; myTotal=0; hisTotal=0; myLbl:SetText("your total: 0"); hisLbl:SetText("their total: 0") end})
 local TradeHelperSec = TradeTab:AddSection({Name="trade helper", Side="Right"})
 TradeHelperSec:AddToggle({Name="show price on items", Default=true, Callback=function(v) State.tradeHelperOn=v end})
+end
 
 local MusicTab = Win:AddTab({Name="music", Subtitle="sounds"})
 local MusicSec = MusicTab:AddSection({Name="music", Side="Left"})
@@ -2218,5 +2222,5 @@ LocalPlayer.CharacterAdded:Connect(function()
     end)
 end)
 task.delay(0.8, function() Library:Notify({Title="piddle", Text="loaded successfully", Duration=5}) end)
-task.delay(2.5, function() Library:Notify({Title="piddle", Text="click watermark to toggle ui", Duration=5}) end)
+task.delay(2.5, function() Library:Notify({Title="piddle", Text="click watermark to toggle ui/нажми на ватермарк чтобы открыть основное окно скрипта", Duration=5}) end)
 warn("[PIDDLE] Loaded")
