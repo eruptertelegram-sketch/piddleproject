@@ -1,4 +1,5 @@
 task.wait(2)
+
 local Players = game:GetService("Players")
 local UIS = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
@@ -937,6 +938,7 @@ task.spawn(function()
     end
 end)
 
+-- ТВОЙ РОДНОЙ KILL ALL
 local function killAllRun()
     local plr = LocalPlayer
     if not plr then return end
@@ -1178,6 +1180,7 @@ RunService.Heartbeat:Connect(function()
     end
 end)
 
+-- ТВОЙ РОДНОЙ AUTO GET GUN
 local function findDroppedGun()
     local nearest, nd = nil, 10000
     local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
@@ -2082,7 +2085,6 @@ local gunSkins={}; for k in pairs(SKINS.Gun) do table.insert(gunSkins,k) end
 SkinSec:AddDropdown({Name="knife skin", Values=knifeSkins, Default=CFG.knifeSkin, Callback=function(v) CFG.knifeSkin=v; saveCFG(); applySkinNow("Knife",v) end})
 SkinSec:AddDropdown({Name="gun skin", Values=gunSkins, Default=CFG.gunSkin, Callback=function(v) CFG.gunSkin=v; saveCFG(); applySkinNow("Gun",v) end})
 
--- НОВАЯ ВКЛАДКА SPAWN
 local SpawnTab = Win:AddTab({Name="spawn", Subtitle="spawn items"})
 local SpawnSec = SpawnTab:AddSection({Name="spawn", Side="Left"})
 SpawnSec:AddButton({Name="spawn scooter", Callback=function()
@@ -2217,4 +2219,4 @@ LocalPlayer.CharacterAdded:Connect(function()
 end)
 task.delay(0.8, function() Library:Notify({Title="piddle", Text="loaded successfully", Duration=5}) end)
 task.delay(2.5, function() Library:Notify({Title="piddle", Text="click watermark to toggle ui", Duration=5}) end)
-warn("[PIDDLE] loaded, hope you'll enjoy it")
+warn("[PIDDLE] Loaded")
