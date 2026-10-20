@@ -561,7 +561,7 @@ local CFG = {
     selectedPack=nil, korbloxOn=false, headlessOn=false,
     bgName="Halloween", knifeSkin="Default", gunSkin="Default",
     topImage="Anime", topImageVisible=true,
-    killEffectOn=true, killEffectStyle="confetti", killEffectSelf=false, bulletTracerOn=true, bulletTracerColor=Color3.fromRGB(255,220,80), bulletTracerLife=5,
+    killEffectOn=true, killEffectStyle="confetti", killEffectSelf=false, bulletTracerOn=true, bulletTracerColor=Color3.fromRGB(255,220,80), bulletTracerTime=0.4, bulletTracerWidth=0.12,
     musicOn=false, musicVolume=50, tpSpeed = 0.1,
     warnRoundStart = true, warnRole = true,
 }
@@ -746,27 +746,97 @@ Connect(UIS.InputEnded,function(i)
     end
 end)
 
-local function makeTracer(fromPos, toPos, color, thickness, lifetime)
+local function makeTracer(fromPos, toPos, color)
     if not CFG.bulletTracerOn then return end
-    local dist = (toPos-fromPos).Magnitude
+    local dist=(toPos-fromPos).Magnitude
     if dist<0.5 then return end
-    lifetime = lifetime or CFG.bulletTracerLife
-    local part = Instance.new("Part")
-    part.Anchored=true; part.CanCollide=false; part.CanQuery=false; part.Transparency=1
-    part.Size=Vector3.new(0.05,0.05,dist)
-    part.CFrame=CFrame.lookAt(fromPos,toPos)*CFrame.new(0,0,-dist/2)
-    part.Parent=WS
-    local att0=Instance.new("Attachment",part); att0.Position=Vector3.new(0,0,dist/2)
-    local att1=Instance.new("Attachment",part); att1.Position=Vector3.new(0,0,-dist/2)
-    local beam=Instance.new("Beam",part)
-    beam.Attachment0=att0; beam.Attachment1=att1
-    beam.Width0=thickness*0.25; beam.Width1=thickness*0.25
-    beam.FaceCamera=true; beam.LightEmission=1; beam.LightInfluence=0
-    beam.Color=ColorSequence.new(color or CFG.bulletTracerColor)
-    beam.Transparency=NumberSequence.new({NumberSequenceKeypoint.new(0,0), NumberSequenceKeypoint.new(0.5,0.1), NumberSequenceKeypoint.new(1,0.8)})
-    TweenService:Create(beam, TweenInfo.new(lifetime, Enum.EasingStyle.Linear), {Width0=thickness*0.05, Width1=thickness*0.05, Transparency=NumberSequence.new(1)}):Play()
-    Debris:AddItem(part, lifetime+0.1)
+    local life=math.clamp(CFG.bulletTracerTime or 0.4,0.1,3)
+    local w=math.clamp(CFG.bulletTracerWidth or 0.12,0.03,0.6)
+    local flight=math.clamp(dist/700,0.04,0.5)
+    local line=Instance.new("Part")
+    line.Anchored=true; line.CanCollide=false; line.CanQuery=false; line.CanTouch=false
+    line.Material=Enum.Material.Neon; line.Color=color or CFG.bulletTracerColor; line.Transparency=0.1
+    line.Size=Vector3.new(w,w,0.1)
+    line.CFrame=CFrame.lookAt(fromPos,toPos)
+    line.Parent=WS
+    TweenService:Create(line,TweenInfo.new(flight,Enum.EasingStyle.Linear),{
+        Size=Vector3.new(w,w,dist),
+        CFrame=CFrame.lookAt(fromPos,toPos)*CFrame.new(0,0,-dist/2),
+    }):Play()
+    TweenService:Create(line,TweenInfo.new(life,Enum.EasingStyle.Quad,Enum.EasingDirection.In,0,false,flight),{Transparency=1}):Play()
+    Debris:AddItem(line,flight+life+0.1)
+    task.delay(flight,function()
+        local f=Instance.new("Part")
+        f.Anchored=true; f.CanCollide=false; f.CanQuery=false; f.CanTouch=false; f.Shape=Enum.PartType.Ball
+        f.Material=Enum.Material.Neon; f.Color=color or CFG.bulletTracerColor; f.Size=Vector3.new(0.5,0.5,0.5); f.Transparency=0.2
+        f.CFrame=CFrame.new(toPos); f.Parent=WS
+        TweenService:Create(f,TweenInfo.new(0.25,Enum.EasingStyle.Quad,Enum.EasingDirection.Out),{Size=Vector3.new(1.6,1.6,1.6),Transparency=1}):Play()
+        Debris:AddItem(f,0.35)
+    end)
 end
+
+local BT={hooked=false}
+function BT.draw(origin,targetPos)
+    if not CFG.bulletTracerOn then return end
+    local delta=targetPos-origin
+    if delta.Magnitude<0.1 then return end
+    local dir=delta.Unit
+    local stop=targetPos
+    if not State.shootThroughWalls then
+        local params=RaycastParams.new()
+        params.FilterType=Enum.RaycastFilterType.Exclude
+        params.FilterDescendantsInstances=LocalPlayer.Character and {LocalPlayer.Character} or {}
+        local r=WS:Raycast(origin,dir*1000,params)
+        stop=r and r.Position or (origin+dir*500)
+    end
+    makeTracer(origin,stop,CFG.bulletTracerColor)
+end
+pcall(function()
+    if not (hookmetamethod and getnamecallmethod and newcclosure) then return end
+    local old
+    old=hookmetamethod(game,"__namecall",newcclosure(function(self,...)
+        local method=getnamecallmethod()
+        if method=="FireServer" then
+            local ok,isShot=pcall(function() return self.Name=="Shoot" and self.Parent and self.Parent.Name=="Gun" end)
+            if ok and isShot then
+                local a,b=...
+                task.spawn(function()
+                    local ok2,o,t=pcall(function() return a.Position,b.Position end)
+                    if ok2 then BT.draw(o,t) end
+                end)
+            end
+        end
+        return old(self,...)
+    end))
+    BT.hooked=true
+end)
+function BT.bind(tool)
+    if BT.hooked or not tool:IsA("Tool") or tool.Name~="Gun" then return end
+    Connect(tool.Activated,function()
+        if BT.hooked then return end
+        local ch=LocalPlayer.Character
+        local head=ch and ch:FindFirstChild("Head")
+        if not head then return end
+        local loc=UIS:GetMouseLocation()
+        if loc.Magnitude<1 then loc=Cam.ViewportSize/2 end
+        local ray=Cam:ViewportPointToRay(loc.X,loc.Y)
+        local params=RaycastParams.new()
+        params.FilterType=Enum.RaycastFilterType.Exclude
+        params.FilterDescendantsInstances={ch}
+        local hit=WS:Raycast(ray.Origin,ray.Direction*1000,params)
+        BT.draw(head.Position,hit and hit.Position or (ray.Origin+ray.Direction*500))
+    end)
+end
+function BT.all()
+    for _,c in ipairs({LocalPlayer.Character,LocalPlayer:FindFirstChild("Backpack")}) do
+        if c then
+            for _,tool in ipairs(c:GetChildren()) do BT.bind(tool) end
+            Connect(c.ChildAdded,BT.bind)
+        end
+    end
+end
+BT.all()
+Connect(LocalPlayer.CharacterAdded,function() task.wait(0.5); BT.all() end)
 
 local DeathFx={}
 function DeathFx.part(root,size,color,pos,shape)
@@ -852,61 +922,76 @@ task.spawn(function()
     end
 end)
 
-local Fling = {Active=false, Target=nil, SavedCFrame=nil, BodyThrust=nil}
-local function stopFling()
-    Fling.Active = false
-    if Fling.BodyThrust then 
-        pcall(function() Fling.BodyThrust:Destroy() end)
-        Fling.BodyThrust = nil
+local Fling = {Active=false, busy=false, allRun=0}
+local function stopFling() Fling.Active=false end
+
+function Fling.run(target)
+    if not target then return end
+    if Fling.busy then
+        Fling.Active=false
+        for _=1,40 do if not Fling.busy then break end task.wait(0.05) end
     end
-    local ch = LocalPlayer.Character
-    if ch and Fling.SavedCFrame then
-        local root = ch:FindFirstChild("HumanoidRootPart")
-        if root then
-            root.CFrame = Fling.SavedCFrame
-            root.AssemblyLinearVelocity = Vector3.zero
-            root.AssemblyAngularVelocity = Vector3.zero
-        end
-        local hum = ch:FindFirstChildOfClass("Humanoid")
-        if hum then pcall(function() hum:ChangeState(Enum.HumanoidStateType.GettingUp) end) end
+    local myChar=LocalPlayer.Character
+    local myRoot=myChar and myChar:FindFirstChild("HumanoidRootPart")
+    local myHum=myChar and myChar:FindFirstChildOfClass("Humanoid")
+    local tRoot=target.Character and target.Character:FindFirstChild("HumanoidRootPart")
+    if not (myRoot and myHum and tRoot) or myHum.Health<=0 then return end
+
+    Fling.busy=true; Fling.Active=true
+    local home=myRoot.CFrame
+    local startPos=tRoot.Position
+    local oldFall=WS.FallenPartsDestroyHeight
+    pcall(function() WS.FallenPartsDestroyHeight=0/0 end)
+
+    local cc={}
+    for _,pt in ipairs(myChar:GetDescendants()) do
+        if pt:IsA("BasePart") then cc[pt]=pt.CanCollide; pt.CanCollide=false end
     end
-    Fling.SavedCFrame = nil
-end
+    local noclip=RunService.Stepped:Connect(function()
+        for pt in pairs(cc) do if pt.Parent then pt.CanCollide=false end end
+    end)
+    local spin=Instance.new("BodyAngularVelocity")
+    spin.Name="PiddleFling"
+    spin.MaxTorque=Vector3.new(math.huge,math.huge,math.huge)
+    spin.P=math.huge
+    spin.AngularVelocity=Vector3.new(0,9e5,0)
+    spin.Parent=myRoot
 
-local function flingPlayer(target)
-    if not target or not target.Character then return end
-    local myChar = LocalPlayer.Character
-    if not myChar then return end
-    local myRoot = myChar:FindFirstChild("HumanoidRootPart")
-    local targetRoot = target.Character:FindFirstChild("HumanoidRootPart")
-    if not myRoot or not targetRoot then return end
-    
-    stopFling()
-    Fling.Active = true
-    Fling.Target = target
-    Fling.SavedCFrame = myRoot.CFrame
+    local offsets={Vector3.new(0,1.5,0),Vector3.new(0,-1.5,0),Vector3.new(2.25,1.5,-2.25),Vector3.new(-2.25,-1.5,2.25),Vector3.new(0,1.5,2.25),Vector3.new(0,-1.5,-2.25)}
+    local i,t0=0,tick()
+    while Fling.Active and tick()-t0<3 do
+        local tr=target.Character and target.Character:FindFirstChild("HumanoidRootPart")
+        local th=target.Character and target.Character:FindFirstChildOfClass("Humanoid")
+        local mr=LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+        if LocalPlayer.Character~=myChar or not tr or not mr or (th and th.Health<=0) then break end
+        if tr.AssemblyLinearVelocity.Magnitude>600 or (tr.Position-startPos).Magnitude>120 then break end
+        i=i%#offsets+1
+        mr.CFrame=CFrame.new(tr.Position+offsets[i]+tr.AssemblyLinearVelocity*0.1)*CFrame.Angles(math.rad(90*i),0,0)
+        mr.AssemblyLinearVelocity=Vector3.new(9e7,9e7*10,9e7)
+        mr.AssemblyAngularVelocity=Vector3.new(9e8,9e8,9e8)
+        RunService.Heartbeat:Wait()
+    end
 
-    local thr = Instance.new("BodyThrust")
-    thr.Name = "FlingThrust"
-    thr.Force = Vector3.new(99999, 99999, 99999)
-    thr.Location = targetRoot.Position
-    thr.Parent = myRoot
-    Fling.BodyThrust = thr
-
-    task.spawn(function()
-        local startT = tick()
-        while Fling.Active and tick() - startT < 5 do
-            if target.Character and target.Character:FindFirstChild("HumanoidRootPart") then
-                myRoot.CFrame = target.Character.HumanoidRootPart.CFrame
-                thr.Location = target.Character.HumanoidRootPart.Position
-            else
-                break
-            end
+    pcall(function() spin:Destroy() end)
+    if LocalPlayer.Character==myChar then
+        local t1=tick()
+        while tick()-t1<0.7 do
+            local mr=myChar:FindFirstChild("HumanoidRootPart")
+            if not mr then break end
+            mr.CFrame=home
+            mr.AssemblyLinearVelocity=Vector3.zero
+            mr.AssemblyAngularVelocity=Vector3.zero
             RunService.Heartbeat:Wait()
         end
-        stopFling()
-    end)
+    end
+    noclip:Disconnect()
+    for pt,v in pairs(cc) do if pt.Parent then pt.CanCollide=v end end
+    if LocalPlayer.Character==myChar and myHum.Parent then pcall(function() myHum:ChangeState(Enum.HumanoidStateType.GettingUp) end) end
+    pcall(function() WS.FallenPartsDestroyHeight=oldFall end)
+    Fling.Active=false; Fling.busy=false
 end
+
+local function flingPlayer(target) task.spawn(Fling.run,target) end
 
 function Fling.gunHolder()
     local best
@@ -926,9 +1011,8 @@ function Fling.all()
     task.spawn(function()
         for _,p in ipairs(Players:GetPlayers()) do
             if Fling.allRun~=id then return end
-            if p~=LocalPlayer and p.Character and not isRealNpc(p) and getRole(p)~="NPC" then flingPlayer(p); task.wait(2) end
+            if p~=LocalPlayer and p.Character and not isRealNpc(p) and getRole(p)~="NPC" then Fling.run(p) end
         end
-        if Fling.allRun==id then stopFling() end
     end)
 end
 
@@ -1129,7 +1213,7 @@ local function fireGunWallbang(targetPos)
         end
     end
     pcall(function() shoot:FireServer(CFrame.new(origin,targetPos),CFrame.new(targetPos)) end)
-    makeTracer(origin,targetPos,CFG.bulletTracerColor,2,CFG.bulletTracerLife)
+    if not BT.hooked then BT.draw(origin,targetPos) end
 end
 
 RunService.RenderStepped:Connect(function()
@@ -1989,7 +2073,7 @@ task.spawn(function()
     end
 end)
 
-local HomeTab = Win:AddTab({Name="home", Subtitle="main"})
+local HomeTab = Win:AddTab({Name="main", Subtitle="home"})
 local HomeMain = HomeTab:AddSection({Name="general", Side="Left"})
 HomeMain:AddButton({Name="save config", Callback=function() saveCFG(); Library:Notify({Title="piddle", Text="config saved"}) end})
 HomeMain:AddButton({Name="reset character", Callback=function() if LocalPlayer.Character then pcall(function() LocalPlayer.Character:BreakJoints() end) end end})
@@ -2099,7 +2183,7 @@ local FlingTab = Win:AddTab({Name="fling", Subtitle="fling"})
 local FlingSec = FlingTab:AddSection({Name="fling", Side="Left"})
 FlingSec:AddButton({Name="fling murderer", Callback=function() local p=findMurderer(); if p then flingPlayer(p) end end})
 FlingSec:AddButton({Name="fling sheriff", Callback=function() local p=findSheriff(); if p then flingPlayer(p) end end})
-FlingSec:AddButton({Name="fling hero (gun)", Callback=function() local p=Fling.gunHolder(); if p then flingPlayer(p) else Library:Notify({Title="fling", Text="nobody has the gun"}) end end})
+FlingSec:AddButton({Name="fling hero", Callback=function() local p=Fling.gunHolder(); if p then flingPlayer(p) else Library:Notify({Title="fling", Text="nobody has the gun"}) end end})
 FlingSec:AddButton({Name="fling all", Callback=function() Fling.all() end})
 FlingSec:AddButton({Name="fling selected", Callback=function() local sel=playerDropdown:Get(); local p=sel and Players:FindFirstChild(sel); if p and p~=LocalPlayer then flingPlayer(p) end end})
 FlingSec:AddButton({Name="stop fling", Callback=function() Fling.allRun=Fling.allRun+1; stopFling() end})
@@ -2214,7 +2298,8 @@ end})
 local BtSec = VisualsTab:AddSection({Name="bullet tracer", Side="Right"})
 BtSec:AddToggle({Name="enable tracer", Default=true, Callback=function(v) CFG.bulletTracerOn=v; saveCFG() end})
 BtSec:AddColorPicker({Name="tracer color", Default=Color3.fromRGB(255,220,80), Callback=function(c) CFG.bulletTracerColor=c; saveCFG() end})
-BtSec:AddSlider({Name="tracer life", Min=1, Max=10, Default=5, Callback=function(v) CFG.bulletTracerLife=v; saveCFG() end})
+BtSec:AddSlider({Name="tracer fade (sec)", Min=0.1, Max=2, Increment=0.05, Default=0.4, Callback=function(v) CFG.bulletTracerTime=v; saveCFG() end})
+BtSec:AddSlider({Name="tracer width", Min=0.05, Max=0.5, Increment=0.01, Default=0.12, Callback=function(v) CFG.bulletTracerWidth=v; saveCFG() end})
 
 do
 local MV={auto=false,dupe=false,cap=3,pick=1,running=false,session=0,used=0,mark=0,conns={},origin=nil,spot=nil,wasEn=false}
@@ -2466,7 +2551,7 @@ LocalPlayer.CharacterAdded:Connect(function()
         if CFG.selectedPack then applyPack(CFG.selectedPack) end
     end)
 end)
-for n,o in pairs({["map vote"]=-4,["anti fling"]=-3,["effects"]=-2,["settings"]=-1}) do
+for n,o in pairs({["main"]=-5,["combat"]=-4,["map vote"]=-3,["player"]=-2,["players"]=-1}) do
     for _,tb in ipairs(Win.Tabs) do if tb.Name==n then tb.Group.LayoutOrder=o end end
 end
 task.delay(0.8, function() Library:Notify({Title="piddle", Text="loaded successfully", Duration=5}) end)
