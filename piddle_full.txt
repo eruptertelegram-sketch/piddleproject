@@ -35,13 +35,14 @@ function EX.clip(s)
     end
     return false
 end
-function EX.touch(a,b)
+function EX.touch(a,b,fast)
     local f=(type(firetouchinterest)=="function" and firetouchinterest) or (syn and type(syn.firetouchinterest)=="function" and syn.firetouchinterest)
     if not f then return false end
-    return pcall(function() f(a,b,0); task.wait(); f(a,b,1) end)
+    return pcall(function() f(a,b,0); if not fast then task.wait() end; f(a,b,1) end)
 end
-function EX.prompt(p)
+function EX.prompt(p,fast)
     if type(fireproximityprompt)=="function" and pcall(fireproximityprompt,p) then return true end
+    if fast then return pcall(function() p:InputHoldBegin(); p:InputHoldEnd() end) end
     return pcall(function() p:InputHoldBegin(); task.wait((p.HoldDuration or 0)+0.05); p:InputHoldEnd() end)
 end
 
@@ -1116,7 +1117,7 @@ function GD.watch(on)
     for _,c in ipairs(GD.conns) do pcall(function() c:Disconnect() end) end
     GD.conns={}
     if not on then GD.drop=nil; return end
-    GD.conns[1]=Connect(WS.DescendantAdded,function(o) if o.Name=="GunDrop" then GD.drop=o end end)
+    GD.conns[1]=Connect(WS.DescendantAdded,function(o) if o.Name=="GunDrop" then GD.drop=o; if GD.grab then task.defer(GD.grab) end end end)
     GD.conns[2]=Connect(WS.DescendantRemoving,function(o) if o==GD.drop then GD.drop=nil end end)
     GD.find()
 end
@@ -1124,12 +1125,24 @@ function GD.parts()
     local d=GD.drop
     if not d or not d.Parent then
         GD.drop=nil
-        if os.clock()-GD.scan>0.5 then GD.scan=os.clock(); d=GD.find() else d=nil end
+        if os.clock()-GD.scan>1.5 then GD.scan=os.clock(); d=GD.find() else d=nil end
     end
     if not d then return nil end
     local part=d:IsA("BasePart") and d or d:FindFirstChild("Handle") or d:FindFirstChildWhichIsA("BasePart",true)
     local prompt=d:FindFirstChildWhichIsA("ProximityPrompt",true)
     return part,prompt,d
+end
+function GD.remotes()
+    if GD.rl and os.clock()-GD.rlT<5 then return GD.rl end
+    local l={}
+    for _,r in ipairs(ReplicatedStorage:GetDescendants()) do
+        if r:IsA("RemoteEvent") then
+            local n=r.Name:lower()
+            if n:find("pick") or n:find("gun") or n:find("interact") or n:find("drop") then l[#l+1]=r end
+        end
+    end
+    GD.rl=l; GD.rlT=os.clock()
+    return l
 end
 local function grabDroppedGun()
     if getRole(LocalPlayer)=="Murderer" or isRealNpc(LocalPlayer) then return false end
@@ -1137,25 +1150,19 @@ local function grabDroppedGun()
     if not hrp then return false end
     local part,prompt,drop=GD.parts()
     if not part then return false end
-    if prompt then EX.prompt(prompt) end
-    EX.touch(hrp,part)
-    if not hasItem(LocalPlayer,"Gun") then
-        for _,r in ipairs(ReplicatedStorage:GetDescendants()) do
-            if r:IsA("RemoteEvent") then
-                local n=r.Name:lower()
-                if n:find("pick") or n:find("gun") or n:find("interact") or n:find("drop") then
-                    pcall(function() r:FireServer(drop) end)
-                end
-            end
-        end
+    if prompt then EX.prompt(prompt,true) end
+    EX.touch(hrp,part,true)
+    if not hasItem(LocalPlayer,"Gun") and os.clock()-(GD.lastR or 0)>0.1 then
+        GD.lastR=os.clock()
+        for _,r in ipairs(GD.remotes()) do pcall(function() r:FireServer(drop) end) end
     end
     return true
 end
+GD.grab=grabDroppedGun
 task.spawn(function()
     while true do
-        task.wait(0.25)
+        RunService.Heartbeat:Wait()
         if (State.autoGun or State.autoShoot or State.zombieAutoShoot) and LocalPlayer.Character and not hasItem(LocalPlayer, "Gun") then
-            if not GD.drop then pcall(GD.find) end
             pcall(grabDroppedGun)
         end
     end
@@ -2302,7 +2309,8 @@ function MV.padPos(p)
     return ok and cf.Position or Vector3.zero
 end
 function MV.padSpot(p) return MV.padPos(p)+Vector3.new(0,(p:IsA("BasePart") and p.Size.Y/2 or 0)+3,0) end
-function MV.tallyOf(e) return tonumber(tostring(e.tally.Text):match("%d+")) or 0 end
+function MV.num(tx) tx=tostring(tx); return tx:match("(%d+)%s*$") or tx:match("(%d+)") end
+function MV.tallyOf(e) return tonumber(MV.num(e.tally.Text)) or 0 end
 function MV.isNum(s)
     s=tostring(s):lower()
     return s:match("^%s*%d+%s*$")~=nil or s:match("^%s*votes?%s*:?%s*%d+%s*$")~=nil or s:match("^%s*%d+%s*votes?%s*$")~=nil
@@ -2378,12 +2386,90 @@ function MV.byNames()
     end
     return out
 end
+-- 1.8) by position: displays near the three vote platforms (names unknown)
+function MV.bySpace()
+    local t0=os.clock()
+    local function slice() if os.clock()-t0>0.008 then task.wait(); t0=os.clock() end end
+    local slots={{},{},{}}
+    local function nearest(pos)
+        local best,bd
+        for i=1,3 do
+            local c=MV.PLATFORMS[i]
+            local d=math.sqrt((pos.X-c.X)^2+(pos.Z-c.Z)^2)
+            if not bd or d<bd then best,bd=i,d end
+        end
+        if bd and bd<=16 and math.abs(pos.Y-MV.PLATFORMS[1].Y)<80 then return best end
+    end
+    local function take(slot,gui,pos)
+        local s=slots[slot]
+        for _,d in ipairs(gui:GetDescendants()) do
+            local c=d.ClassName
+            if c=="TextLabel" and d.Text~="" then
+                if MV.isVote(d.Text,false) or d.Name:lower():find("vote") then s.tally=s.tally or d
+                elseif not d.Text:match("^%d+$") and #d.Text>=2 then s.title=s.title or d end
+            elseif (c=="ImageLabel" or c=="ImageButton") and d.Image~="" then s.icon=s.icon or d
+            end
+        end
+        s.pos=s.pos or pos
+    end
+    local rp=OverlapParams.new()
+    for i=1,3 do
+        local c=MV.PLATFORMS[i]
+        local okp,parts=pcall(function() return WS:GetPartBoundsInRadius(c+Vector3.new(0,15,0),60,rp) end)
+        if okp and parts then
+            for _,part in ipairs(parts) do
+                local slot=nearest(part.Position)
+                if slot then
+                    for _,ch in ipairs(part:GetChildren()) do
+                        local cn=ch.ClassName
+                        if cn=="SurfaceGui" or cn=="BillboardGui" then take(slot,ch,part.Position)
+                        elseif (cn=="Decal" or cn=="Texture") and ch.Texture~="" then slots[slot].icon=slots[slot].icon or ch; slots[slot].pos=slots[slot].pos or part.Position end
+                    end
+                    if slots[slot].pad==nil and part.Name=="Pad" then slots[slot].pad=part end
+                end
+                slice()
+            end
+        end
+    end
+    local pg=LocalPlayer:FindFirstChild("PlayerGui")
+    if pg then
+        for _,d in ipairs(pg:GetDescendants()) do
+            local cn=d.ClassName
+            if cn=="BillboardGui" or cn=="SurfaceGui" then
+                local okA,ad=pcall(function() return d.Adornee end)
+                if okA and ad and ad:IsA("BasePart") then
+                    local slot=nearest(ad.Position)
+                    if slot then take(slot,d,ad.Position) end
+                end
+            end
+            slice()
+        end
+    end
+    local out,filled={}, 0
+    for i=1,3 do
+        local s=slots[i]
+        if s.title or s.tally or s.icon then filled=filled+1 end
+    end
+    if filled<2 then return {} end
+    for i=1,3 do
+        local s=slots[i]
+        local tallyObj=s.tally
+        out[#out+1]={pad=s.pad,info={Enabled=true},icon=s.icon or {Image="",Parent=true},title=s.title or {Text="",Parent=true},tally=tallyObj or {Text="0",Parent=true},real=(tallyObj~=nil),sx=0,wx=MV.PLATFORMS[i].X}
+    end
+    return out
+end
 -- 2) generic: anchored on "votes" text labels, no dependency on object names
 function MV.isVote(tx,strong)
     tx=tostring(tx):lower()
-    if tx:match("votes?") and tx:match("%d") and #tx<=24 then return true end
+    if tx:match("votes?") and tx:match("%d") and #tx<=60 then return true end
     if strong then return false end
-    return tx:match("^%s*%d+%s*$")~=nil
+    return tx:match("^%s*%d+%s*$")~=nil or (#tx<=40 and tx:match("^.+[:]%s*%d+%s*$")~=nil)
+end
+function MV.strip(tx)
+    tx=tostring(tx)
+    tx=tx:gsub("[Vv][Oo][Tt][Ee][Ss]?%s*:?%s*%d+",""):gsub("%d+%s*[Vv][Oo][Tt][Ee][Ss]?",""):gsub("[:]%s*%d+%s*$","")
+    tx=tx:gsub("[\n\r]"," "):gsub("^[%s:%-]+",""):gsub("[%s:%-]+$","")
+    return tx
 end
 function MV.imgOf(node)
     local best
@@ -2417,15 +2503,20 @@ function MV.cardFrom(anchor,strong)
             end
         end
         if votes>1 then break end
+        local combined
+        if not nameL and votes==1 then
+            local rest=MV.strip(anchor.Text)
+            if #rest>=2 and not rest:match("^[%d%s]+$") then nameL=anchor; combined=true end
+        end
         if nameL and votes==1 then
             local img=MV.imgOf(node)
             local c=img and img.ClassName
-            if img and (c=="Decal" or c=="Texture" or img.Image~="") then return node,nameL,img end
-            fallback=fallback or {node,nameL,img}
+            if img and (c=="Decal" or c=="Texture" or img.Image~="") then return node,nameL,img,combined end
+            fallback=fallback or {node,nameL,img,combined}
         end
         node=node.Parent
     end
-    if fallback then return fallback[1],fallback[2],fallback[3] end
+    if fallback then return fallback[1],fallback[2],fallback[3],fallback[4] end
 end
 function MV.hint(inst)
     local p=inst:GetFullName():lower()
@@ -2441,7 +2532,7 @@ function MV.generic()
                 local c=d.ClassName
                 if c=="TextLabel" or c=="TextButton" then
                     local tx=d.Text
-                    if tx~="" and #tx<=24 and not MV.own(d) then
+                    if tx~="" and #tx<=60 and not MV.own(d) then
                         if MV.isVote(tx,true) or d.Name:lower():find("vote") then strongList[#strongList+1]=d
                         elseif #numList<400 and MV.isVote(tx,false) then numList[#numList+1]=d end
                     end
@@ -2454,10 +2545,10 @@ function MV.generic()
     local list=strong and strongList or numList
     local cards,seen={}, {}
     for _,a in ipairs(list) do
-        local node,nameL,img=MV.cardFrom(a,strong)
+        local node,nameL,img,combined=MV.cardFrom(a,strong)
         if node and not seen[node] then
             seen[node]=true
-            cards[#cards+1]={node=node,nameL=nameL,voteL=a,img=img}
+            cards[#cards+1]={node=node,nameL=nameL,voteL=a,img=img,combined=combined}
         end
         slice()
     end
@@ -2490,7 +2581,12 @@ function MV.generic()
         local part=(gui and gui:IsA("BillboardGui") and gui.Adornee) or (gui and gui.Parent and gui.Parent:IsA("BasePart") and gui.Parent) or node:FindFirstChildWhichIsA("BasePart",true) or (node:IsA("BasePart") and node) or nil
         local pad=node:FindFirstChild("Pad",true)
         local okx,sx=pcall(function() return (img or c.nameL).AbsolutePosition.X end)
-        out[#out+1]={pad=pad,info=gui or {Enabled=true},icon=img or {Image="",Parent=true},title=c.nameL,tally=c.voteL,real=true,sx=okx and sx or 0,wx=part and MV.padPos(part).X or nil}
+        local title=c.nameL
+        if c.combined then
+            local lbl=c.nameL
+            title=setmetatable({Parent=true},{__index=function(_,k) if k=="Text" then return MV.strip(lbl.Text) end end})
+        end
+        out[#out+1]={pad=pad,info=gui or {Enabled=true},icon=img or {Image="",Parent=true},title=title,tally=c.voteL,real=true,sx=okx and sx or 0,wx=part and MV.padPos(part).X or nil}
     end
     return out
 end
@@ -2569,8 +2665,12 @@ function MV.forceScan()
         local okn,res=pcall(MV.byNames)
         if okn and #res>0 then MV.alt=MV.order(res); MV.altMode="names"
         else
-            local okg,r2=pcall(MV.generic)
-            if okg and #r2>0 then MV.alt=MV.order(r2); MV.altMode="scan" end
+            local oks,rs=pcall(MV.bySpace)
+            if oks and #rs>0 then MV.alt=rs; MV.altMode="space"
+            else
+                local okg,r2=pcall(MV.generic)
+                if okg and #r2>0 then MV.alt=MV.order(r2); MV.altMode="scan" end
+            end
         end
         MV.getEntries()
     end
@@ -2770,6 +2870,22 @@ function MV.begin()
     return true
 end
 
+function MV.panel(text)
+    pcall(function()
+        local old=GetGuiParent():FindFirstChild("PiddleReport")
+        if old then old:Destroy() end
+    end)
+    local gui=New("ScreenGui",{Name="PiddleReport",ResetOnSpawn=false,IgnoreGuiInset=true,ZIndexBehavior=Enum.ZIndexBehavior.Sibling,DisplayOrder=2147483000})
+    gui.Parent=GetGuiParent()
+    local fr=New("Frame",{Size=UDim2.new(0.92,0,0.72,0),Position=UDim2.fromScale(0.04,0.14),BackgroundColor3=Color3.fromRGB(16,16,20),BackgroundTransparency=0.05,Parent=gui})
+    Corner(fr,8); Stroke(fr,Color3.fromRGB(90,90,110))
+    local sc=New("ScrollingFrame",{Size=UDim2.new(1,-12,1,-44),Position=UDim2.fromOffset(6,6),BackgroundTransparency=1,ScrollBarThickness=4,AutomaticCanvasSize=Enum.AutomaticSize.Y,CanvasSize=UDim2.new(),Parent=fr})
+    New("TextLabel",{Size=UDim2.new(1,-8,0,0),AutomaticSize=Enum.AutomaticSize.Y,BackgroundTransparency=1,Text=text,TextColor3=Color3.fromRGB(230,230,235),Font=Enum.Font.Code,TextSize=11,TextWrapped=true,TextXAlignment=Enum.TextXAlignment.Left,TextYAlignment=Enum.TextYAlignment.Top,Parent=sc})
+    local btn=New("TextButton",{Size=UDim2.new(1,-12,0,30),Position=UDim2.new(0,6,1,-36),BackgroundColor3=Color3.fromRGB(60,60,80),Text="close (screenshot this first)",TextColor3=Color3.new(1,1,1),Font=Enum.Font.GothamBold,TextSize=12,Parent=fr})
+    Corner(btn,6)
+    btn.MouseButton1Click:Connect(function() gui:Destroy() end)
+end
+
 function MV.dump()
     MV.forceScan()
     local L={"mode: "..MV.mode.." | entries: "..#MV.entries.." | reverse: "..tostring(MV.reverse)}
@@ -2813,10 +2929,12 @@ function MV.dump()
         end
     end
     local rep=table.concat(L,"\n")
+    rep=rep:gsub("Workspace%.","W.")
     MV.report=rep
     print("[PIDDLE vote report]\n"..rep)
+    pcall(MV.panel,rep)
     local copied=EX.clip(rep)
-    Library:Notify({Title="vote report",Text=(copied and ("copied "..#rep.." chars, paste it in chat") or "clipboard unavailable, see console F9").." | "..L[1],Duration=7})
+    Library:Notify({Title="vote report",Text=(copied and "copied to clipboard + shown on screen" or "shown on screen: screenshot it").." | "..L[1],Duration=7})
 end
 
 local MapTab=Win:AddTab({Name="map vote",Subtitle="vote duper"})
@@ -2863,6 +2981,10 @@ task.spawn(function()
                 local found
                 if okn and #resn>0 then MV.alt=MV.order(resn); MV.altMode="names"; found=true
                 else
+                    local oks,ress=pcall(MV.bySpace)
+                    if oks and #ress>0 then MV.alt=ress; MV.altMode="space"; found=true end
+                end
+                if not found then
                     local okg,resg=pcall(MV.generic)
                     if okg and #resg>0 then MV.alt=MV.order(resg); MV.altMode="scan"; found=true end
                 end
@@ -2883,7 +3005,7 @@ task.spawn(function()
                 local c,e=cards[i],MV.entries[i]
                 if e then
                     local nmText=tostring(e.title.Text)
-                    c.img.Image=MV.image(e); c.nm.Text=(nmText~="" and nmText) or ("map "..i); c.vt.Text="votes: "..tostring(e.tally.Text)
+                    c.img.Image=MV.image(e); c.nm.Text=(nmText~="" and nmText) or ("map "..i); c.vt.Text="votes: "..tostring(MV.num(e.tally.Text) or "-")
                 else
                     c.img.Image=""; c.nm.Text="map "..i; c.vt.Text="votes: -"
                 end
@@ -2893,7 +3015,7 @@ task.spawn(function()
             local en=sel and sel.info.Enabled or false
             if MV.auto and sel and en and not MV.wasEn and not MV.running then MV.begin() end
             MV.wasEn=en
-            stLbl:SetText("status: "..(MV.running and ("voting #"..MV.used..(sel and (" +"..MV.gain) or "")) or MV.status).." ["..MV.mode.." "..#MV.entries..(MV.scanning and " scanning" or "").."]")
+            stLbl:SetText("status: "..(MV.running and ("voting #"..MV.used..(sel and (" +"..MV.gain) or "")) or MV.status).." ["..MV.mode.." "..#MV.entries..(MV.scanning and " scanning" or "")..((MV.mode=="hardcoded" and not MV.running) and " - tap copy report" or "").."]")
         end)
         if not ok and not MV.warned then MV.warned=true; warn("[PIDDLE vote] "..tostring(err)) end
         task.wait(0.25)
@@ -2905,6 +3027,30 @@ do
 local AFTab=Win:AddTab({Name="anti fling",Subtitle="protection"})
 local AFSec=AFTab:AddSection({Name="anti fling",Side="Left"})
 AFSec:AddToggle({Name="anti-fling",Default=AF.on,Callback=function(v) AF.on=v end})
+AF.players=true
+AF.done=setmetatable({},{__mode="k"})
+AFSec:AddToggle({Name="anti fling (players)",Default=true,Callback=function(v) AF.players=v end})
+Connect(RunService.Stepped,function()
+    if not AF.players or Fling.busy then return end
+    for _,p in ipairs(Players:GetPlayers()) do
+        local ch=p~=LocalPlayer and p.Character
+        if ch then
+            for _,part in ipairs(ch:GetChildren()) do
+                if part:IsA("BasePart") then
+                    part.CanCollide=false
+                    if part.Name=="HumanoidRootPart" then
+                        if not AF.done[part] then
+                            AF.done[part]=true
+                            pcall(function() part.CustomPhysicalProperties=PhysicalProperties.new(0,0,0,0,0) end)
+                        end
+                        part.AssemblyLinearVelocity=Vector3.zero
+                        part.AssemblyAngularVelocity=Vector3.zero
+                    end
+                end
+            end
+        end
+    end
+end)
 end
 
 do
