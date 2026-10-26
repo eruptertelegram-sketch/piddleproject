@@ -2638,9 +2638,9 @@ local MV = {
     spot = nil,
     conns = {},
     PLATFORMS = {
-        Vector3.new(25.69, 494.37, 49.26),
-        Vector3.new(14.10, 494.37, 51.04),
-        Vector3.new(1.83, 494.37, 50.76)
+        Vector3.new(25.69, 490.37, 49.26),
+        Vector3.new(14.10, 490.37, 51.04),
+        Vector3.new(1.83, 490.37, 50.76)
     }
 }
 
