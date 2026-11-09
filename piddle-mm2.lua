@@ -439,6 +439,7 @@ function Window:SetVisible(state)
 end
 function Window:Toggle() self:SetVisible(not self.Visible) end
 
+do local __ok,__err=pcall(function()
 -- ===== vector tab icons (smooth: rotated rounded bars + circles, no pixel grid) =====
 do
 local TabIcons = {}
@@ -572,6 +573,9 @@ function Library.DrawTabIcon(parent, name)
 end
 end
 
+
+end)
+if not __ok then warn("[piddle] module 'icons' failed: "..tostring(__err)); pcall(function() Library:Notify({Title="piddle",Text="module 'icons' failed: "..tostring(__err),Duration=10}) end) end end
 local function BuildTab(window,cfg,parentTab)
     local tab={Name=cfg.Name or "tab",Subtitle=cfg.Subtitle or "",Window=window,Sections={},Parent=parentTab,Children={},Collapsed=false}
     local container=parentTab and parentTab.ChildHolder or window.TabList
@@ -1400,6 +1404,7 @@ task.spawn(function()
     end
 end)
 
+do local __ok,__err=pcall(function()
 -- ===== smarter prediction: velocity tracker + bullet speed calibration + intercept solver =====
 X.TRK = setmetatable({}, {__mode="k"})
 X.BULLET = {speed=220, auto=true, samples=0}
@@ -1505,6 +1510,9 @@ function X.aimPoint(tch)
     return P + Vector3.new(0, 0.2, 0)
 end
 
+
+end)
+if not __ok then warn("[piddle] module 'aim' failed: "..tostring(__err)); pcall(function() Library:Notify({Title="piddle",Text="module 'aim' failed: "..tostring(__err),Duration=10}) end) end end
 local function preciseAim(targetPart, targetChar)
     local ch = LocalPlayer.Character
     if not ch then return end
@@ -2065,6 +2073,7 @@ Connect(LocalPlayer.CharacterAdded, function()
     X.AURA.part = nil
     State.playerAuraPart, State.playerAuraLight = nil, nil
 end)
+do local __ok,__err=pcall(function()
 -- ===== ASSET LOADER (shared by wings + aura) =====
 X.ASSET = {cache = {}, loading = {}}
 function X.ASSET.get(id, cb)
@@ -2390,6 +2399,9 @@ function X.AURA.destroy()
     State.playerAuraPart, State.playerAuraLight = nil, nil
 end
 
+
+end)
+if not __ok then warn("[piddle] module 'wings' failed: "..tostring(__err)); pcall(function() Library:Notify({Title="piddle",Text="module 'wings' failed: "..tostring(__err),Duration=10}) end) end end
 local function applyPack(name)
     local ch=LocalPlayer.Character; if not ch then return end
     local animate=ch:FindFirstChild("Animate"); if not animate then return end
@@ -2681,6 +2693,7 @@ X.BoxESP = {
     },
     _data = setmetatable({}, {__mode="k"}),
 }
+do local __ok,__err=pcall(function()
 do
 local B = X.BoxESP
 B.gui = nil
@@ -2789,6 +2802,9 @@ Connect(RunService.RenderStepped, function()
 end)
 end
 
+
+end)
+if not __ok then warn("[piddle] module 'box' failed: "..tostring(__err)); pcall(function() Library:Notify({Title="piddle",Text="module 'box' failed: "..tostring(__err),Duration=10}) end) end end
 X.Coins = {list={}, t=0}
 function X.Coins.get()
     if os.clock()-X.Coins.t > 0.4 then
@@ -3008,6 +3024,7 @@ function X.dodgeThreat(root)
     return best,bd
 end
 
+do local __ok,__err=pcall(function()
 function X.dodgeSpot(root, away, dd)
     dd = dd or UD.DodgeDist
     local origin=root.Position
@@ -3119,6 +3136,9 @@ RunService.Heartbeat:Connect(function()
     UD.isDodging=false
 end)
 
+
+end)
+if not __ok then warn("[piddle] module 'dodge' failed: "..tostring(__err)); pcall(function() Library:Notify({Title="piddle",Text="module 'dodge' failed: "..tostring(__err),Duration=10}) end) end end
 local FlyFarm = {on=false, speed=15, collected=0, startTime=0, visited={}, mode=CFG.autoFarmMode or "under", depth=2, tween=nil, held=false, home=nil}
 function FlyFarm.release()
     State.farmClip=false
@@ -3506,6 +3526,7 @@ local function findTradeItem(q)
     end
     return par
 end
+do local __ok,__err=pcall(function()
 -- ===== value overlay: small tag on top of the item slot (inventory, trade, shop) =====
 X.PV = {tags = setmetatable({}, {__mode = "k"})}
 ;(function()
@@ -3595,6 +3616,9 @@ task.spawn(function()
 end)
 end)()
 
+
+end)
+if not __ok then warn("[piddle] module 'price' failed: "..tostring(__err)); pcall(function() Library:Notify({Title="piddle",Text="module 'price' failed: "..tostring(__err),Duration=10}) end) end end
 local function normalKillAura()
     if not State.killAuraOn then return end
     local ch = LocalPlayer.Character
@@ -3817,6 +3841,7 @@ AuraSec:AddToggle({Name="solid color wings", Default=true, Callback=function(v) 
 AuraSec:AddSlider({Name="wings size", Min=6, Max=20, Default=10, Callback=function(v) X.WINGS.size=v/10; if X.WINGS.on then X.WINGS.destroy() end end})
 AuraSec:AddSlider({Name="flap speed", Min=1, Max=12, Default=3, Callback=function(v) X.WINGS.speed=v end})
 AuraSec:AddToggle({Name="flip wings", Callback=function(v) X.WINGS.flip=v; if X.WINGS.on then X.WINGS.destroy() end end})
+do local __ok,__err=pcall(function()
 -- lighting is enforced every frame so the game / map scripts can't undo it
 X.LT = {}
 Connect(RunService.RenderStepped, function()
@@ -3839,6 +3864,9 @@ end)
 function X.LT.snapNow()
     return {Brightness = Lighting.Brightness, ClockTime = Lighting.ClockTime, Ambient = Lighting.Ambient, OutdoorAmbient = Lighting.OutdoorAmbient, FogEnd = Lighting.FogEnd, FogColor = Lighting.FogColor}
 end
+
+end)
+if not __ok then warn("[piddle] module 'lighting' failed: "..tostring(__err)); pcall(function() Library:Notify({Title="piddle",Text="module 'lighting' failed: "..tostring(__err),Duration=10}) end) end end
 local LightSec = VisualsTab:AddSection({Name="lighting presets", Side="Left"})
 for _,n in ipairs({"Night","Deep Night","Sunset","Dawn","Rainy","Foggy","Storm","Realistic","Default"}) do
     LightSec:AddButton({Name=n, Callback=function() applyLightingPreset(n); X.LT.fb=nil; X.LT.time=nil; X.LT.bright=nil; X.LT.snap=(n~="Default") and X.LT.snapNow() or nil end})
@@ -3909,6 +3937,7 @@ local TpTab = Win:AddTab({Name="teleport", Subtitle="tp"})
 local TpSec = TpTab:AddSection({Name="teleport", Side="Left"})
 TpSec:AddButton({Name="tp murderer", Callback=function() local p=findMurderer(); if p and p.Character and LocalPlayer.Character then local pr=p.Character:FindFirstChild("HumanoidRootPart"); local lr=LocalPlayer.Character:FindFirstChild("HumanoidRootPart"); if pr and lr then lr.CFrame=pr.CFrame+Vector3.new(0,3,0) end end end})
 TpSec:AddButton({Name="tp sheriff", Callback=function() local p=findSheriff(); if p and p.Character and LocalPlayer.Character then local pr=p.Character:FindFirstChild("HumanoidRootPart"); local lr=LocalPlayer.Character:FindFirstChild("HumanoidRootPart"); if pr and lr then lr.CFrame=pr.CFrame+Vector3.new(0,3,0) end end end})
+do local __ok,__err=pcall(function()
 do
 local function tpTo(cf)
     local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
@@ -3977,6 +4006,9 @@ TpSec:AddButton({Name="tp secret room (halloween)", Callback=function()
 end})
 end
 
+end)
+if not __ok then warn("[piddle] module 'tp' failed: "..tostring(__err)); pcall(function() Library:Notify({Title="piddle",Text="module 'tp' failed: "..tostring(__err),Duration=10}) end) end end
+
 local FlingTab = Win:AddTab({Name="fling", Subtitle="fling"})
 local FlingSec = FlingTab:AddSection({Name="fling", Side="Left"})
 FlingSec:AddButton({Name="fling murderer", Callback=function() local p=findMurderer(); if p then flingPlayer(p) end end})
@@ -3987,6 +4019,7 @@ FlingSec:AddButton({Name="fling selected", Callback=function() local sel=playerD
 FlingSec:AddButton({Name="stop fling", Callback=function() Fling.allRun=Fling.allRun+1; stopFling() end})
 FlingSec:AddToggle({Name="touch fling", Callback=function(v) State.touchFlingOn=v end})
 
+do local __ok,__err=pcall(function()
 task.spawn(function()
     local movel = 0.1
     while true do
@@ -4013,6 +4046,9 @@ task.spawn(function()
         end)
     end
 end)
+
+end)
+if not __ok then warn("[piddle] module 'touchfling' failed: "..tostring(__err)); pcall(function() Library:Notify({Title="piddle",Text="module 'touchfling' failed: "..tostring(__err),Duration=10}) end) end end
 
 Connect(UIS.JumpRequest, function()
     if not State.infJump then return end
@@ -4156,6 +4192,7 @@ function X.AL.apply(v)
         pcall(function() v.Enabled=false end)
     end
 end
+do local __ok,__err=pcall(function()
 X.AL.charCache = setmetatable({}, {__mode = "k"})
 X.AL.lightOld = nil
 -- originals live on the instances themselves (attributes) so they survive a script re-run and can always be restored
@@ -4251,6 +4288,9 @@ function X.AL.disable()
     task.spawn(X.AL.restoreTex)
 end
 Connect(WS.DescendantAdded, function(v) if X.AL.on then task.defer(function() X.AL.apply(v); pcall(X.AL.strip, v) end) end end)
+
+end)
+if not __ok then warn("[piddle] module 'antilag' failed: "..tostring(__err)); pcall(function() Library:Notify({Title="piddle",Text="module 'antilag' failed: "..tostring(__err),Duration=10}) end) end end
 task.spawn(function()
     while true do
         task.wait(1)
@@ -4272,6 +4312,7 @@ local WarnSec = WarnTab:AddSection({Name="notifications", Side="Left"})
 WarnSec:AddToggle({Name="role notice", Default=CFG.warnRole~=false, Callback=function(v) CFG.warnRole=v; saveCFG() end})
 WarnSec:AddToggle({Name="round start", Default=CFG.warnRoundStart~=false, Callback=function(v) CFG.warnRoundStart=v; saveCFG() end})
 
+do local __ok,__err=pcall(function()
 -- ===== LIVE WALLPAPER (video) =====
 X.LW = {on = false, video = nil, dim = nil, busy = false, vdim = CFG.liveDim or 35,
     urls = {
@@ -4388,6 +4429,10 @@ function LW.apply(on)
 end
 end)()
 
+
+end)
+if not __ok then warn("[piddle] module 'wallpaper' failed: "..tostring(__err)); pcall(function() Library:Notify({Title="piddle",Text="module 'wallpaper' failed: "..tostring(__err),Duration=10}) end) end end
+do local __ok,__err=pcall(function()
 -- ===== ANIMATED BACKGROUNDS (script-made): triangles / constellation =====
 X.ANIM = {on = false, mode = "tri", frame = nil, items = {}, conn = nil, count = tonumber(CFG.triCount) or 14, speed = tonumber(CFG.triSpeed) or 100,
     color = (typeof(CFG.triColor) == "Color3" and CFG.triColor) or nil,
@@ -4528,6 +4573,9 @@ function A.setDotColor(c) A.dotColor = c; CFG.netDotColor = c; saveCFG() end
 function A.setLineColor(c) A.lineColor = c; CFG.netLineColor = c; saveCFG() end
 end)()
 
+
+end)
+if not __ok then warn("[piddle] module 'anim' failed: "..tostring(__err)); pcall(function() Library:Notify({Title="piddle",Text="module 'anim' failed: "..tostring(__err),Duration=10}) end) end end
 local UpdateTab = Win:AddTab({Name="update", Subtitle="zombie mode"})
 local ZombieSec = UpdateTab:AddSection({Name="zombie features", Side="Left"})
 ZombieSec:AddToggle({Name="auto shoot zombies", Callback=function(v) State.zombieAutoShoot=v end})
@@ -4713,6 +4761,7 @@ function X.SK.fromId(kind, v)
         X.SK.refresh()
     end)
 end
+do local __ok,__err=pcall(function()
 X.NOIR = {loaded = false, loading = false}
 function X.NOIR.env() return (getgenv and getgenv()) or _G end
 function X.NOIR.state() return X.NOIR.env().__NoirSkinsState end
@@ -4769,6 +4818,9 @@ function X.NOIR.destroy()
     if g.__NoirSkinsDestroy then pcall(g.__NoirSkinsDestroy) end
     X.NOIR.loaded = false
 end
+
+end)
+if not __ok then warn("[piddle] module 'noir' failed: "..tostring(__err)); pcall(function() Library:Notify({Title="piddle",Text="module 'noir' failed: "..tostring(__err),Duration=10}) end) end end
 SkinSec:AddLabel({Name="needs Noir_Skinchanger.lua in the executor workspace folder (or a link). skins are picked on the Changer page in the game inventory"})
 SkinSec:AddToggle({Name="skin changer", Default=CFG.noirSkins==true, Callback=function(v) CFG.noirSkins=v; saveCFG(); X.NOIR.setEnabled(v) end})
 SkinSec:AddToggle({Name="knife on belt", Default=CFG.noirBelt==true, Callback=function(v) CFG.noirBelt=v; saveCFG(); X.NOIR.setBelt(v) end})
@@ -6061,7 +6113,7 @@ function MP.play(i)
     end)
     task.spawn(function()
         local img = ""
-        if t.cover then img = MP.asset(t.cover, ".jpg") or "" end
+        if t.cover then img = MP.asset(t.cover, MP.imgExt(t.cover)) or "" end
         if MP.token ~= tk then return end
         MP.cover.Image = img
     end)
@@ -6101,6 +6153,40 @@ MP.dd = LibSec:AddDropdown({Name = "track", Values = names(), Default = MP.track
     end
 end})
 local newSrc, newName = "", ""
+do local __ok,__err=pcall(function()
+-- ===== extra tracks (links are normalised to raw.githubusercontent.com) =====
+function MP.imgExt(u) u = string.lower(tostring(u or "")); if u:find("%.png") then return ".png" elseif u:find("%.webp") then return ".webp" end return ".jpg" end
+local function fixGH(u)
+    u = (u:gsub("^https://github%.com/([^/]+)/([^/]+)/blob/([^/]+)/(.+)$", "https://raw.githubusercontent.com/%1/%2/%3/%4"))
+    local user, repo, rest = u:match("^https://github%.com/([^/]+)/([^/]+)/raw/(.+)$")
+    if user then
+        if string.sub(rest, 1, 11) == "refs/heads/" then rest = string.sub(rest, 12) end
+        if not rest:find("/", 1, true) then rest = "main/" .. rest end       -- link without a branch -> main
+        u = "https://raw.githubusercontent.com/" .. user .. "/" .. repo .. "/" .. rest
+    end
+    local pre, tail = u:match("^(https://raw%.githubusercontent%.com/[^/]+/[^/]+/refs/heads/)(.+)$")
+    if pre and not tail:find("/", 1, true) then u = pre .. "main/" .. tail end
+    return u
+end
+do
+    local R = "https://github.com/eruptertelegram-sketch/piddleproject/"
+    local C = "https://raw.githubusercontent.com/eruptertelegram-sketch/piddleproject/refs/heads/"
+    local EXTRA = {
+        {"Deceptacon", R .. "raw/Deceptacon.mp3", C .. "main/Screenshot_20261108_135827_Metrolist.jpg"},
+        {"Wavin' Flag", R .. "raw/K'NAAN%20-%20Wavin'%20Flag%20(Coca-Cola%20Celebration%20Mix)%20-%20Keinan%20A%20(128k).mp3", C .. "Screenshot_20261108_141600_Metrolist.jpg"},
+        {"I Got the Feeling", R .. "raw/main/I%20Got%20the%20Feeling.mp3", "https://i1.sndcdn.com/artworks-F56T2j1CRBmy-0-t500x500.png"},
+        {"Bang Bang", R .. "blob/main/Bang%20Bang.mp3", C .. "main/Screenshot_20261108_141600_Metrolist.jpg"},
+        {"Girl Like Me", R .. "raw/main/Black%20Eyed%20Peas%2C%20Shakira%20-%20GIRL%20LIKE%20ME%20(Official%20Music%20Video).mp3", C .. "main/Screenshot_20261108_141428_Metrolist.jpg"},
+    }
+    local have = {}
+    for _, t in ipairs(MP.tracks) do have[string.lower(t.name)] = true end
+    for _, e in ipairs(EXTRA) do
+        if not have[string.lower(e[1])] then
+            table.insert(MP.tracks, {name = e[1], kind = "url", src = fixGH(e[2]), cover = fixGH(e[3])})
+        end
+    end
+    pcall(function() MP.dd:SetValues(names()) end)
+end
 -- ===== music: library discovery (every audio file in the repo), covers, preload =====
 local RAWBASE = "https://raw.githubusercontent.com/eruptertelegram-sketch/piddleproject/main/"
 local function enc(path) return (path:gsub("[^%w%-%._~/]", function(c) return string.format("%%%02X", string.byte(c)) end)) end
@@ -6117,7 +6203,7 @@ function MP.show(i)
     if MP.idx == 0 then MP.title.Text = t.name end
     task.spawn(function()
         local img = ""
-        if t.cover then img = MP.asset(t.cover, ".jpg") or "" end
+        if t.cover then img = MP.asset(t.cover, MP.imgExt(t.cover)) or "" end
         if MP.shownTok == tok and (MP.idx == 0 or MP.idx == i) then MP.cover.Image = img end
     end)
 end
@@ -6138,7 +6224,13 @@ function MP.discover(notify)
         if IMAGE[ext] then images[norm(baseName(p))] = p end
     end
     local have = {}
-    for _, t in ipairs(MP.tracks) do have[norm(t.name)] = true; if t.src then have[norm(baseName(t.src:gsub("%%20", " ")))] = true end end
+    for _, t in ipairs(MP.tracks) do
+        have[norm(t.name)] = true
+        if t.src then
+            local dec = t.src:gsub("%%(%x%x)", function(h) return string.char(tonumber(h, 16)) end)
+            have[norm(baseName(dec))] = true
+        end
+    end
     local added = 0
     for _, p in ipairs(paths) do
         local ext = string.lower(p:match("%.(%w+)$") or "")
@@ -6167,7 +6259,7 @@ task.spawn(function()
     if first and first.kind == "url" then MP.asset(first.src, ".mp3") end
     for i = 2, #MP.tracks do
         local t = MP.tracks[i]
-        if t.cover then MP.asset(t.cover, ".jpg") end
+        if t.cover then MP.asset(t.cover, MP.imgExt(t.cover)) end
         task.wait(0.5)
     end
     if CFG.musicAuto and MP.idx == 0 then MP.play(1) end
@@ -6180,11 +6272,14 @@ do
             if MP.idx == 0 then MP.show(MP.sel or 1)
             elseif MP.cover.Image == "" and MP.tracks[MP.idx] and MP.tracks[MP.idx].cover then
                 local t = MP.tracks[MP.idx]
-                task.spawn(function() local img = MP.asset(t.cover, ".jpg"); if img then MP.cover.Image = img end end)
+                task.spawn(function() local img = MP.asset(t.cover, MP.imgExt(t.cover)); if img then MP.cover.Image = img end end)
             end
         end
     end
 end
+
+end)
+if not __ok then warn("[piddle] module 'music' failed: "..tostring(__err)); pcall(function() Library:Notify({Title="piddle",Text="module 'music' failed: "..tostring(__err),Duration=10}) end) end end
 LibSec:AddTextbox({Name = "link or asset id", Placeholder = "https://... or 123456", Callback = function(v) newSrc = tostring(v or "") end})
 LibSec:AddTextbox({Name = "name (optional)", Placeholder = "my song", Callback = function(v) newName = tostring(v or "") end})
 LibSec:AddButton({Name = "add track", Callback = function()
@@ -6229,6 +6324,7 @@ task.spawn(function()
 end)
 end
 
+do local __ok,__err=pcall(function()
 -- ===== MINIGAMES UI (inserted into piddle; uses its helpers: New Corner Stroke Label List Padding Connect Tween Theme) =====
 X.MG = {}
 X.MG.L = (function()
@@ -7953,6 +8049,9 @@ function MG.setOpen(v)
 end
 end)()
 
+end)
+if not __ok then warn("[piddle] module 'mg_full' failed: "..tostring(__err)); pcall(function() Library:Notify({Title="piddle",Text="module 'mg_full' failed: "..tostring(__err),Duration=10}) end) end end
+
 do
 local MGTab = Win:AddTab({Name="minigames", Subtitle="sapper, ttt, ships, dino"})
 local MGSec = MGTab:AddSection({Name="minigames", Side="Left"})
@@ -7967,6 +8066,7 @@ Win.SelectTab = function(self, tab)
     elseif X.MG.open then X.MG.setOpen(false) end
 end
 end
+do local __ok,__err=pcall(function()
 -- ===== HOTKEYS: rebindable keys + small HUD =====
 X.HK = {binds = {}, hud = nil}
 ;(function()
@@ -8096,6 +8196,9 @@ HkInfo:AddToggle({Name = "show hotkey hud", Default = HK.hudOn, Callback = funct
 HkInfo:AddLabel({Name = "green dot = function is on. drag the hud by its title."})
 end)()
 
+
+end)
+if not __ok then warn("[piddle] module 'hotkeys' failed: "..tostring(__err)); pcall(function() Library:Notify({Title="piddle",Text="module 'hotkeys' failed: "..tostring(__err),Duration=10}) end) end end
 local SettingsTab = Win:AddTab({Name="settings", Subtitle="ui config"})
 local BgSec = SettingsTab:AddSection({Name="background", Side="Left"})
 local bgNames={}; for k in pairs(BG_LIST) do table.insert(bgNames,k) end; table.sort(bgNames)
@@ -8280,6 +8383,7 @@ if Win.Sidebar then
     if typeof(CFG.sidebarColor) == "Color3" then Win.Sidebar.BackgroundColor3 = CFG.sidebarColor end
     if CFG.sidebarTrans then Win.Sidebar.BackgroundTransparency = CFG.sidebarTrans / 100 end
 end
+do local __ok,__err=pcall(function()
 -- main window can be resized by dragging the corner grip (scales the whole UI)
 do
     local g = New("TextButton", {Parent = Win.Main, Size = UDim2.fromOffset(18, 18), Position = UDim2.new(1, -20, 1, -20), BackgroundTransparency = 1, Text = "", ZIndex = 60})
@@ -8300,6 +8404,10 @@ do
     Connect(UIS.InputEnded, function(i) if rs and IsPress(i) then rs = false; EX.modal(false); saveCFG() end end)
 end
 
+
+end)
+if not __ok then warn("[piddle] module 'winresize' failed: "..tostring(__err)); pcall(function() Library:Notify({Title="piddle",Text="module 'winresize' failed: "..tostring(__err),Duration=10}) end) end end
+do local __ok,__err=pcall(function()
 -- pictures that fail to download get re-requested a few times (fixes "broken" images)
 task.spawn(function()
     task.wait(2.5)
@@ -8320,6 +8428,10 @@ task.spawn(function()
     end
 end)
 
+
+end)
+if not __ok then warn("[piddle] module 'imgretry' failed: "..tostring(__err)); pcall(function() Library:Notify({Title="piddle",Text="module 'imgretry' failed: "..tostring(__err),Duration=10}) end) end end
+do local __ok,__err=pcall(function()
 -- everything the script changed is rolled back when the UI is unloaded / re-executed
 Library.UnloadHooks = Library.UnloadHooks or {}
 table.insert(Library.UnloadHooks, function()
@@ -8345,6 +8457,9 @@ table.insert(Library.UnloadHooks, function()
         end)
     end
 end)
+
+end)
+if not __ok then warn("[piddle] module 'unload' failed: "..tostring(__err)); pcall(function() Library:Notify({Title="piddle",Text="module 'unload' failed: "..tostring(__err),Duration=10}) end) end end
 do local b=BG_LIST[CFG.bgName]
     if type(b)=="string" and b:find("^video:") then task.delay(1, function() pcall(X.LW.apply, true) end)
     elseif type(b)=="string" and b:find("^anim:") then task.delay(0.5, function() pcall(X.ANIM.apply, true, b:sub(6)) end) end
