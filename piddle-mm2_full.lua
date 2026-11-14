@@ -639,6 +639,56 @@ function Library:Notify(cfg)
     task.delay(duration,function() if card.Parent then Tween(card,TWEEN_MED,{Position=UDim2.fromOffset(240,0)}); task.wait(0.25); slot:Destroy() end end)
 end
 
+do local __ok,__err=pcall(function()
+-- ===== generic two-handle range slider (e.g. "ball size: 1.5 - 8") =====
+function Library.AddRangeSlider(sec, opt)
+    local min, max = opt.Min, opt.Max
+    local step = opt.Increment or 0.1
+    local lo, hi = opt.DefaultMin or min, opt.DefaultMax or max
+    local row = New("Frame", {Size = UDim2.new(1, -4, 0, 40), BackgroundTransparency = 1, Parent = sec.Holder or sec})
+    local lbl = Label({Size = UDim2.new(1, 0, 0, 14), Text = opt.Name .. ": " .. string.format("%.1f", lo) .. " - " .. string.format("%.1f", hi), Parent = row})
+    local track = New("Frame", {Size = UDim2.new(1, 0, 0, 6), Position = UDim2.fromOffset(0, 22), BackgroundColor3 = Theme.Box, Parent = row})
+    Corner(track, 3)
+    local fill = New("Frame", {BackgroundColor3 = Theme.Accent, Parent = track}); Corner(fill, 3)
+    local function pct(v) return math.clamp((v - min) / (max - min), 0, 1) end
+    local function layout()
+        local a, b = pct(lo), pct(hi)
+        fill.Position = UDim2.fromScale(a, 0); fill.Size = UDim2.fromScale(b - a, 1)
+    end
+    local function mkKnob()
+        local k = New("TextButton", {Size = UDim2.fromOffset(14, 14), AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromOffset(0, 3), BackgroundColor3 = Theme.Accent, Text = "", AutoButtonColor = false, Parent = track})
+        Corner(k, 7); Stroke(k, Theme.Stroke)
+        return k
+    end
+    local kLo, kHi = mkKnob(), mkKnob()
+    local function place()
+        kLo.Position = UDim2.new(pct(lo), 0, 0, 3)
+        kHi.Position = UDim2.new(pct(hi), 0, 0, 3)
+        layout()
+        lbl.Text = opt.Name .. ": " .. string.format("%.1f", lo) .. " - " .. string.format("%.1f", hi)
+    end
+    place()
+    local function fire() if opt.Callback then opt.Callback(lo, hi) end end
+    local function drag(knob, isLo)
+        local active = false
+        Connect(knob.InputBegan, function(i) if IsPress(i) then active = true; EX.modal(true) end end)
+        Connect(UIS.InputEnded, function(i) if active and IsPress(i) then active = false; EX.modal(false); fire() end end)
+        Connect(UIS.InputChanged, function(i)
+            if not active or not IsMove(i) then return end
+            local rel = math.clamp((i.Position.X - track.AbsolutePosition.X) / math.max(track.AbsoluteSize.X, 1), 0, 1)
+            local v = min + rel * (max - min)
+            v = math.floor(v / step + 0.5) * step
+            if isLo then lo = math.clamp(v, min, hi - step) else hi = math.clamp(v, lo + step, max) end
+            place()
+        end)
+    end
+    drag(kLo, true); drag(kHi, false)
+    return {set = function(a, b) lo, hi = a, b; place() end, get = function() return lo, hi end}
+end
+
+
+end)
+if not __ok then warn("[piddle] module 'rangeslider' failed: "..tostring(__err)); pcall(function() Library:Notify({Title="piddle",Text="module 'rangeslider' failed: "..tostring(__err),Duration=10}) end) end end
 function Library:CreateWindow(cfg)
     cfg=cfg or {}
     if not self.Gui then
@@ -885,72 +935,118 @@ local function findSheriff() return findByRole("Sheriff") end
 local Fling = {Active=false, busy=false, allRun=0}
 local function stopFling() Fling.Active=false end
 
+do local __ok,__err=pcall(function()
+-- ===== FLING (decoy edition): a visible copy of you stays put, your real body does the flinging and is hidden,
+--      the camera stays locked on the decoy so it looks like you're watching someone get thrown from where you stood =====
+X.FlingDecoy = {}
+local function hideReal(ch)
+    local hidden = {}
+    for _, d in ipairs(ch:GetDescendants()) do
+        if d:IsA("BasePart") then hidden[d] = d.Transparency; d.Transparency = 1
+        elseif d:IsA("Decal") then hidden[d] = d.Transparency; d.Transparency = 1 end
+    end
+    return hidden
+end
+local function restoreReal(hidden)
+    for d, tr in pairs(hidden) do if d.Parent then pcall(function() d.Transparency = tr end) end end
+end
+local function makeDecoy(ch, cf)
+    local ok, clone = pcall(function() return ch:Clone() end)
+    if not ok or not clone then return nil end
+    for _, d in ipairs(clone:GetDescendants()) do
+        if d:IsA("Script") or d:IsA("LocalScript") then pcall(function() d:Destroy() end)
+        elseif d:IsA("BasePart") then d.Anchored = true; d.CanCollide = false; d.CanQuery = false; d.CanTouch = false
+        elseif d:IsA("Humanoid") then pcall(function() d.PlatformStand = true end) end
+    end
+    clone.Name = "PiddleFlingDecoy"
+    pcall(function() clone:PivotTo(cf) end)
+    clone.Parent = WS
+    return clone
+end
 function Fling.run(target)
     if not target then return end
     if Fling.busy then
-        Fling.Active=false
-        for _=1,40 do if not Fling.busy then break end task.wait(0.05) end
+        Fling.Active = false
+        for _ = 1, 40 do if not Fling.busy then break end task.wait(0.05) end
     end
-    local myChar=LocalPlayer.Character
-    local myRoot=myChar and myChar:FindFirstChild("HumanoidRootPart")
-    local myHum=myChar and myChar:FindFirstChildOfClass("Humanoid")
-    local tRoot=target.Character and target.Character:FindFirstChild("HumanoidRootPart")
-    if not (myRoot and myHum and tRoot) or myHum.Health<=0 then return end
+    local myChar = LocalPlayer.Character
+    local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+    local myHum = myChar and myChar:FindFirstChildOfClass("Humanoid")
+    local tRoot = target.Character and target.Character:FindFirstChild("HumanoidRootPart")
+    if not (myRoot and myHum and tRoot) or myHum.Health <= 0 then return end
 
-    Fling.busy=true; Fling.Active=true
-    local home=myRoot.CFrame
-    local startPos=tRoot.Position
-    local oldFall=WS.FallenPartsDestroyHeight
-    pcall(function() WS.FallenPartsDestroyHeight=0/0 end)
+    Fling.busy = true; Fling.Active = true
+    local home = myRoot.CFrame
+    local startPos = tRoot.Position
+    local oldFall = WS.FallenPartsDestroyHeight
+    pcall(function() WS.FallenPartsDestroyHeight = 0 / 0 end)
 
-    local pp={}
-    for _,pt in ipairs(myChar:GetDescendants()) do
+    -- decoy + invisible real body + locked camera, so the fling itself is invisible to you
+    local decoy = makeDecoy(myChar, home)
+    local hidden = hideReal(myChar)
+    local oldCamType = Cam.CameraType
+    local savedCamCFrame = Cam.CFrame
+    Cam.CameraType = Enum.CameraType.Scriptable
+    local camConn = Connect(RunService.RenderStepped, function() Cam.CFrame = savedCamCFrame end)
+
+    local pp = {}
+    for _, pt in ipairs(myChar:GetDescendants()) do
         if pt:IsA("BasePart") then
-            pp[pt]=pt.CustomPhysicalProperties
-            pcall(function() pt.CustomPhysicalProperties=PhysicalProperties.new(100,0.3,0.5) end)
+            pp[pt] = pt.CustomPhysicalProperties
+            pcall(function() pt.CustomPhysicalProperties = PhysicalProperties.new(100, 0.3, 0.5) end)
         end
     end
-    local spin=Instance.new("BodyAngularVelocity")
-    spin.Name="PiddleFling"
-    spin.MaxTorque=Vector3.new(math.huge,math.huge,math.huge)
-    spin.P=math.huge
-    spin.AngularVelocity=Vector3.new(0,9e5,0)
-    spin.Parent=myRoot
+    local spin = Instance.new("BodyAngularVelocity")
+    spin.Name = "PiddleFling"
+    spin.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
+    spin.P = math.huge
+    spin.AngularVelocity = Vector3.new(0, 9e5, 0)
+    spin.Parent = myRoot
 
-    local offsets={Vector3.new(0,0,0),Vector3.new(0,0.9,0),Vector3.new(0,-0.9,0),Vector3.new(0.6,0,0),Vector3.new(-0.6,0,0),Vector3.new(0,0,0.6),Vector3.new(0,0,-0.6)}
-    local i,t0=0,tick()
-    while Fling.Active and tick()-t0<3 do
-        local tr=target.Character and target.Character:FindFirstChild("HumanoidRootPart")
-        local th=target.Character and target.Character:FindFirstChildOfClass("Humanoid")
-        local mr=LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-        if LocalPlayer.Character~=myChar or not tr or not mr or (th and th.Health<=0) then break end
-        if tr.AssemblyLinearVelocity.Magnitude>600 or (tr.Position-startPos).Magnitude>120 then break end
-        i=i%#offsets+1
-        mr.CFrame=CFrame.new(tr.Position+offsets[i]+tr.AssemblyLinearVelocity*0.05)*CFrame.Angles(math.rad(90*i),0,0)
-        mr.AssemblyLinearVelocity=Vector3.new(9e7,9e7*10,9e7)
-        mr.AssemblyAngularVelocity=Vector3.new(9e8,9e8,9e8)
+    local offsets = {Vector3.new(0, 0, 0), Vector3.new(0, 0.9, 0), Vector3.new(0, -0.9, 0), Vector3.new(0.6, 0, 0), Vector3.new(-0.6, 0, 0), Vector3.new(0, 0, 0.6), Vector3.new(0, 0, -0.6)}
+    local i, t0 = 0, tick()
+    while Fling.Active and tick() - t0 < 3 do
+        local tr = target.Character and target.Character:FindFirstChild("HumanoidRootPart")
+        local th = target.Character and target.Character:FindFirstChildOfClass("Humanoid")
+        local mr = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+        if LocalPlayer.Character ~= myChar or not tr or not mr or (th and th.Health <= 0) then break end
+        if tr.AssemblyLinearVelocity.Magnitude > 600 or (tr.Position - startPos).Magnitude > 120 then break end
+        i = i % #offsets + 1
+        mr.CFrame = CFrame.new(tr.Position + offsets[i] + tr.AssemblyLinearVelocity * 0.05) * CFrame.Angles(math.rad(90 * i), 0, 0)
+        mr.AssemblyLinearVelocity = Vector3.new(9e7, 9e7 * 10, 9e7)
+        mr.AssemblyAngularVelocity = Vector3.new(9e8, 9e8, 9e8)
         RunService.Heartbeat:Wait()
     end
 
     pcall(function() spin:Destroy() end)
-    if LocalPlayer.Character==myChar then
-        local t1=tick()
-        while tick()-t1<0.7 do
-            local mr=myChar:FindFirstChild("HumanoidRootPart")
+    if LocalPlayer.Character == myChar then
+        local t1 = tick()
+        while tick() - t1 < 0.7 do
+            local mr = myChar:FindFirstChild("HumanoidRootPart")
             if not mr then break end
-            mr.CFrame=home
-            mr.AssemblyLinearVelocity=Vector3.zero
-            mr.AssemblyAngularVelocity=Vector3.zero
+            mr.CFrame = home
+            mr.AssemblyLinearVelocity = Vector3.zero
+            mr.AssemblyAngularVelocity = Vector3.zero
             RunService.Heartbeat:Wait()
         end
     end
-    for pt,v in pairs(pp) do if pt.Parent then pcall(function() pt.CustomPhysicalProperties=v end) end end
-    if LocalPlayer.Character==myChar and myHum.Parent then pcall(function() myHum:ChangeState(Enum.HumanoidStateType.GettingUp) end) end
-    pcall(function() WS.FallenPartsDestroyHeight=oldFall end)
-    Fling.Active=false; Fling.busy=false
-end
+    for pt, v in pairs(pp) do if pt.Parent then pcall(function() pt.CustomPhysicalProperties = v end) end end
+    if LocalPlayer.Character == myChar and myHum.Parent then pcall(function() myHum:ChangeState(Enum.HumanoidStateType.GettingUp) end) end
+    pcall(function() WS.FallenPartsDestroyHeight = oldFall end)
 
-local function flingPlayer(target) task.spawn(Fling.run,target) end
+    pcall(function() camConn:Disconnect() end)
+    Cam.CameraType = oldCamType
+    if LocalPlayer.Character == myChar then restoreReal(hidden) end
+    if decoy then pcall(function() decoy:Destroy() end) end
+
+    Fling.Active = false; Fling.busy = false
+end
+local function flingPlayer(target) task.spawn(Fling.run, target) end
+
+
+end)
+if not __ok then warn("[piddle] module 'fling2' failed: "..tostring(__err)); pcall(function() Library:Notify({Title="piddle",Text="module 'fling2' failed: "..tostring(__err),Duration=10}) end) end end
+
 
 function Fling.gunHolder()
     local best
@@ -1182,7 +1278,7 @@ pcall(function()
             end)
             if ok and kind then
                 local args=table.pack(...)
-                if (kind=="gun" and State.silentGun) or (kind=="knife" and State.silentKnife) then
+                if not X.selfFire and ((kind=="gun" and State.silentGun) or (kind=="knife" and State.silentKnife)) then
                     pcall(X.silentAim,kind,args)
                 end
                 if kind=="gun" then
@@ -1397,7 +1493,7 @@ GD.grab=grabDroppedGun
 task.spawn(function()
     while true do
         RunService.Heartbeat:Wait()
-        if (State.autoGun or State.autoShoot or State.zombieAutoShoot) and LocalPlayer.Character and not hasItem(LocalPlayer, "Gun") then
+        if (State.autoGun or State.autoShoot or State.zombieAutoShoot) and LocalPlayer.Character and not hasItem(LocalPlayer, "Gun") and os.clock() > (X.gunPutAwayUntil or 0) then
             local myHum=LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
             if myHum and myHum.Health>0 and getRole(LocalPlayer)~="Murderer" and not isRealNpc(LocalPlayer) then
                 pcall(grabDroppedGun)
@@ -1714,29 +1810,58 @@ RunService.Heartbeat:Connect(function()
             end
         end
 
-        local origin, aimPos = preciseAim(tHead or tr, tch)
+        -- aim at chest level: a bigger, steadier target than the head alone, so prediction error misses less often
+        local chestY = tHead and (tr.Position.Y + (tHead.Position.Y - tr.Position.Y) * 0.55) or tr.Position.Y
+        local chestPos = Vector3.new(tr.Position.X, chestY, tr.Position.Z)
+        local origin, aimPos = preciseAim({Position = chestPos}, tch)
         if not (origin and aimPos) then return end
         if State.predictMovement and X.smartTiming and target and X.TRK.reversing(target) then
             X.holdSince = X.holdSince or now
             if now - X.holdSince < 0.35 then return end
         end
         X.holdSince = nil
-        X.autoShootCd = now
 
         if State.shootThroughWalls then
             origin = BT.wallOrigin(origin, aimPos, tch)
+        else
+            -- not shooting through walls: verify the path is actually clear, or the shot is likely to miss/whiff
+            local rp = RaycastParams.new()
+            rp.FilterType = Enum.RaycastFilterType.Exclude
+            rp.FilterDescendantsInstances = {ch, tch, Cam}
+            local d = aimPos - origin
+            if d.Magnitude > 1 then
+                local hit = WS:Raycast(origin, d, rp)
+                if hit and (hit.Position - origin).Magnitude < d.Magnitude - 1.5 then return end
+            end
         end
         -- somebody stands in the line of fire: hold the shot until they move
-        if X.lineBlocked(origin, aimPos, tch) then X.autoShootCd = now - 0.18; return end
+        if X.lineBlocked(origin, aimPos, tch) then return end
+        X.autoShootCd = now
 
+        X.selfFire = true
         if shoot then
             pcall(function() shoot:FireServer(CFrame.new(origin, aimPos), CFrame.new(aimPos)) end)
         else
             pcall(function() g:Activate() end)
         end
+        X.selfFire = false
 
         if getgenv().__NoirTracers and getgenv().__NoirTracers.on and getgenv().__NoirTracers.build then
             getgenv().__NoirTracers.shot(origin, aimPos, getgenv().__NoirTracers.impact, getgenv().__NoirTracers.muzzle)
+        end
+
+        -- put the gun away once the target dies, instead of it snapping back into your hand every tick
+        if State.putAwayAfterKill and target then
+            task.spawn(function()
+                for _ = 1, 20 do
+                    task.wait(0.1)
+                    if not th.Parent or th.Health <= 0 then
+                        X.gunPutAwayUntil = os.clock() + (tonumber(CFG.putAwaySeconds) or 3)
+                        pcall(function() hum:UnequipTools() end)
+                        return
+                    end
+                end
+            end)
         end
     end)
 end)
@@ -2495,8 +2620,8 @@ function X.AURA.ensure()
     X.AURA.halo = {part = d, weld = dw}
     local light = Instance.new("PointLight"); light.Color = col; light.Range = 12; light.Brightness = 1.8; light.Parent = p
     -- body trail: a ribbon that follows your movement
-    local ta = Instance.new("Attachment"); ta.Name = "PiddleTrailA"; ta.Position = Vector3.new(0, 2.6, 0); ta.Parent = p
-    local tb = Instance.new("Attachment"); tb.Name = "PiddleTrailB"; tb.Position = Vector3.new(0, -2.8, 0); tb.Parent = p
+    local ta = Instance.new("Attachment"); ta.Name = "PiddleTrailA"; ta.Position = Vector3.new(0, 0.6, 0); ta.Parent = p
+    local tb = Instance.new("Attachment"); tb.Name = "PiddleTrailB"; tb.Position = Vector3.new(0, -0.7, 0); tb.Parent = p
     local tr = Instance.new("Trail"); tr.Name = "PiddleAuraTrail"; tr.Attachment0 = ta; tr.Attachment1 = tb
     tr.Lifetime = X.AURA.trailLen or 0.9; tr.MinLength = 0.05; tr.LightEmission = 1; tr.FaceCamera = false
     tr.Color = ColorSequence.new(col); tr.Transparency = NumberSequence.new({NumberSequenceKeypoint.new(0, 0.35), NumberSequenceKeypoint.new(1, 1)})
@@ -3024,6 +3149,15 @@ task.spawn(function()
     end
 end)
 
+-- Drawing lines (tracers / skeleton) render above every ScreenGui; hide the parts that would sit on top of our own UI
+function X.insideUI(x, y)
+    local m = Win and Win.Main
+    if not m then return false end
+    local p, sz = m.AbsolutePosition, m.AbsoluteSize
+    local pad = 6
+    return x >= p.X - pad and x <= p.X + sz.X + pad and y >= p.Y - pad and y <= p.Y + sz.Y + pad
+end
+
 Connect(RunService.RenderStepped, function()
     pcall(function()
         if not State.skeletonESP or not Drawing then
@@ -3055,7 +3189,7 @@ Connect(RunService.RenderStepped, function()
                             end
                             local pa, onA = cam:WorldToViewportPoint(a.Position)
                             local pb, onB = cam:WorldToViewportPoint(b.Position)
-                            if onA and onB then
+                            if onA and onB and not (X.insideUI(pa.X, pa.Y) or X.insideUI(pb.X, pb.Y)) then
                                 line.Color = col
                                 line.Transparency = 1
                                 line.From = Vector2.new(pa.X, pa.Y)
@@ -3090,7 +3224,7 @@ RunService.RenderStepped:Connect(function()
             local line=tracers[p]
             if hd and hum and hum.Health>0 and getRole(p)~="NPC" then
                 local v,onScreen=Cam:WorldToViewportPoint(hd.Position)
-                if onScreen then
+                if onScreen and not X.insideUI(v.X, v.Y) then
                     if not line then
                         line=Drawing.new("Line"); line.Thickness=1.5; line.Transparency=0.9; line.Visible=false; tracers[p]=line
                     end
@@ -3108,67 +3242,62 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 
+do local __ok,__err=pcall(function()
+-- ===== EYE LASER: Drawing-based (not a Part) - only you can see it, and it flings instead of damaging =====
 task.spawn(function()
+    local lineL, lineR
+    if Drawing then
+        lineL = Drawing.new("Line"); lineL.Thickness = 2; lineL.Transparency = 1; lineL.Visible = false
+        lineR = Drawing.new("Line"); lineR.Thickness = 2; lineR.Transparency = 1; lineR.Visible = false
+    end
     while true do
-        task.wait(0.05)
-        if KillFx.EyeLaser and LocalPlayer.Character then
+        task.wait(0.03)
+        if KillFx.EyeLaser and LocalPlayer.Character and lineL then
             pcall(function()
-                local ch=LocalPlayer.Character
-                local myHead=ch:FindFirstChild("Head"); if not myHead then return end
-                local origin=myHead.Position
-                local dir=Cam.CFrame.LookVector
-                local rp=RaycastParams.new()
-                rp.FilterType=Enum.RaycastFilterType.Exclude
-                rp.FilterDescendantsInstances={ch}
-                local hit=WS:Raycast(origin,dir*KillFx.EyeLaserRange,rp)
-                local hitPos=hit and hit.Position or (origin+dir*KillFx.EyeLaserRange)
-                if not KillFx._beam or not KillFx._beam.Parent then
-                    KillFx._beam=Instance.new("Part")
-                    KillFx._beam.Size=Vector3.new(0.2,0.2,1)
-                    KillFx._beam.Material=Enum.Material.Neon
-                    KillFx._beam.Anchored=true; KillFx._beam.CanCollide=false; KillFx._beam.CanQuery=false
-                    KillFx._beam.Parent=WS
+                local ch = LocalPlayer.Character
+                local myHead = ch:FindFirstChild("Head"); if not myHead then return end
+                local origin = myHead.Position
+                local dir = Cam.CFrame.LookVector
+                local rp = RaycastParams.new()
+                rp.FilterType = Enum.RaycastFilterType.Exclude
+                rp.FilterDescendantsInstances = {ch}
+                local hit = WS:Raycast(origin, dir * KillFx.EyeLaserRange, rp)
+                local hitPos = hit and hit.Position or (origin + dir * KillFx.EyeLaserRange)
+                local leftEye = (myHead.CFrame * CFrame.new(-0.2, 0.1, -0.3)).Position
+                local rightEye = (myHead.CFrame * CFrame.new(0.2, 0.1, -0.3)).Position
+                local p0 = Cam:WorldToViewportPoint(leftEye)
+                local p1 = Cam:WorldToViewportPoint(rightEye)
+                local p2 = Cam:WorldToViewportPoint(hitPos)
+                if p0.Z > 0 and p2.Z > 0 then
+                    lineL.From = Vector2.new(p0.X, p0.Y); lineL.To = Vector2.new(p2.X, p2.Y)
+                    lineL.Color = CFG.laserColor; lineL.Transparency = 1; lineL.Visible = true
                 end
-                if not KillFx._beam2 or not KillFx._beam2.Parent then
-                    KillFx._beam2=Instance.new("Part")
-                    KillFx._beam2.Size=Vector3.new(0.2,0.2,1)
-                    KillFx._beam2.Material=Enum.Material.Neon
-                    KillFx._beam2.Anchored=true; KillFx._beam2.CanCollide=false; KillFx._beam2.CanQuery=false
-                    KillFx._beam2.Parent=WS
+                if p1.Z > 0 and p2.Z > 0 then
+                    lineR.From = Vector2.new(p1.X, p1.Y); lineR.To = Vector2.new(p2.X, p2.Y)
+                    lineR.Color = CFG.laser2Color; lineR.Transparency = 1; lineR.Visible = true
                 end
-                local leftEye = myHead.CFrame * CFrame.new(-0.2, 0.1, -0.3)
-                local rightEye = myHead.CFrame * CFrame.new(0.2, 0.1, -0.3)
-
-                local function updateBeam(b, startPos)
-                    b.Size=Vector3.new(0.15,0.15,(hitPos-startPos).Magnitude)
-                    b.CFrame=CFrame.new((startPos+hitPos)/2,hitPos)
-                    b.Transparency=0
-                end
-                updateBeam(KillFx._beam, leftEye.Position)
-                updateBeam(KillFx._beam2, rightEye.Position)
-                KillFx._beam.Color = CFG.laserColor
-                KillFx._beam2.Color = CFG.laser2Color
-
                 if hit and hit.Instance then
-                    local model=hit.Instance:FindFirstAncestorOfClass("Model")
-                    local plr=model and Players:GetPlayerFromCharacter(model)
-                    if plr and plr~=LocalPlayer and tick()-KillFx.EyeLaserCd>0.3 then
-                        local hrp=plr.Character and plr.Character:FindFirstChild("HumanoidRootPart")
-                        if hrp then
-                            if not Fling.busy then
-                                KillFx.EyeLaserCd=tick()
-                                flingPlayer(plr)
-                            end
+                    local model = hit.Instance:FindFirstAncestorOfClass("Model")
+                    local plr = model and Players:GetPlayerFromCharacter(model)
+                    if plr and plr ~= LocalPlayer and tick() - KillFx.EyeLaserCd > 0.3 then
+                        local hrp = plr.Character and plr.Character:FindFirstChild("HumanoidRootPart")
+                        if hrp and not Fling.busy then
+                            KillFx.EyeLaserCd = tick()
+                            task.spawn(Fling.run, plr)
                         end
                     end
                 end
             end)
         else
-            if KillFx._beam and KillFx._beam.Parent then KillFx._beam.Transparency=1 end
-            if KillFx._beam2 and KillFx._beam2.Parent then KillFx._beam2.Transparency=1 end
+            if lineL then lineL.Visible = false end
+            if lineR then lineR.Visible = false end
         end
     end
 end)
+
+
+end)
+if not __ok then warn("[piddle] module 'laser2' failed: "..tostring(__err)); pcall(function() Library:Notify({Title="piddle",Text="module 'laser2' failed: "..tostring(__err),Duration=10}) end) end end
 
 local envParams=RaycastParams.new(); envParams.FilterType=Enum.RaycastFilterType.Exclude
 local function updateDodgeFilters()
@@ -3256,8 +3385,7 @@ RunService.Heartbeat:Connect(function()
     local hum=ch and ch:FindFirstChildOfClass("Humanoid")
     if not root or not hum or hum.Health<=0 then return end
     -- only dodge while a round is actually running and we are alive in it (no random teleports in the lobby / after the round)
-    local myData = rolesCache[LocalPlayer.Name]
-    if not (myData and myData.Role) or myData.Killed or myData.Dead then return end
+    if getRole(LocalPlayer) == "NPC" then return end
     local now=tick()
     if UD.isDodging or now-UD.lastDodgeTime<math.min(UD.BaseCooldown, 0.3) then return end
     local away, hop
@@ -3463,6 +3591,37 @@ end)
 
 local VisState={weather=nil,thread=nil,particles={}}
 local atmosphere=nil
+-- ===== mute game sounds (gunshot / round win / kill / death): generic, works without knowing exact asset ids =====
+X.MUTE = {gun = CFG.muteGun == true, win = CFG.muteWin == true, kill = CFG.muteKill == true, death = CFG.muteDeath == true, orig = setmetatable({}, {__mode = "k"})}
+local function muteKindOf(snd)
+    local nm = string.lower((snd.Name or "") .. " " .. tostring(snd.SoundId or ""))
+    local par = snd.Parent
+    local pn = string.lower(par and par.Name or "")
+    if nm:find("shot", 1, true) or nm:find("gunshot", 1, true) or nm:find("fire", 1, true) or pn:find("gun", 1, true) then return "gun" end
+    if nm:find("win", 1, true) or nm:find("victory", 1, true) or nm:find("roundend", 1, true) then return "win" end
+    if nm:find("kill", 1, true) or nm:find("stab", 1, true) or nm:find("slash", 1, true) then return "kill" end
+    if nm:find("death", 1, true) or nm:find("die", 1, true) or nm:find("scream", 1, true) then return "death" end
+    return nil
+end
+local function muteApply(snd)
+    local k = muteKindOf(snd)
+    if not k or not X.MUTE[k] then return end
+    if X.MUTE.orig[snd] == nil then X.MUTE.orig[snd] = snd.Volume end
+    snd.Volume = 0
+end
+local function muteScan()
+    for _, d in ipairs(WS:GetDescendants()) do if d:IsA("Sound") then pcall(muteApply, d) end end
+    for _, d in ipairs(SoundService:GetDescendants()) do if d:IsA("Sound") then pcall(muteApply, d) end end
+end
+Connect(WS.DescendantAdded, function(d) if d:IsA("Sound") then task.defer(muteApply, d) end end)
+Connect(SoundService.DescendantAdded, function(d) if d:IsA("Sound") then task.defer(muteApply, d) end end)
+function X.MUTE.restore(kind)
+    for snd, vol in pairs(X.MUTE.orig) do
+        if (not kind or muteKindOf(snd) == kind) and snd.Parent then pcall(function() snd.Volume = vol end) end
+    end
+end
+task.spawn(function() while not Library.Unloaded do task.wait(2); if X.MUTE.gun or X.MUTE.win or X.MUTE.kill or X.MUTE.death then muteScan() end end end)
+
 local function ensureAtmosphere(on)
     if on and not atmosphere then
         atmosphere=Instance.new("Atmosphere"); atmosphere.Density=0.3; atmosphere.Haze=1.5; atmosphere.Glare=0.2
@@ -3480,6 +3639,7 @@ X.W.DEFAULT_SOUND = {
     Snow   = "rbxassetid://551546110",
     Leaves = "rbxassetid://9116258071",
 }
+X.W.DEFAULT_THUNDER = {"rbxassetid://9125206114", "rbxassetid://142080840", "rbxassetid://5801257793"}
 function X.W.load(snd, ids, kind)
     for _,id in ipairs(ids) do
         if VisState.weather ~= kind then return false end
@@ -3518,9 +3678,8 @@ function X.W.startSound(kind)
         local th = Instance.new("Sound")
         th.Name = "PiddleThunder"; th.Volume = 1; th.Parent = SoundService
         X.W.thunder = th
-        if X.W.thunderCustom ~= "" then
-            task.spawn(function() X.W.load(th, {X.W.thunderCustom}, kind) end)
-        end
+        local ids = (X.W.thunderCustom ~= "") and {X.W.thunderCustom} or X.W.DEFAULT_THUNDER
+        task.spawn(function() X.W.load(th, ids, kind) end)
     end
 end
 local function clearWeather()
@@ -3725,7 +3884,7 @@ end
 local function mine(d)
     return (Library.Gui and d:IsDescendantOf(Library.Gui)) or (X.MG and X.MG.gui and d:IsDescendantOf(X.MG.gui)) or (WmGui and d:IsDescendantOf(WmGui))
 end
-local NONWEAPON = {"pet", "effect", "emote", "perk", "trail", "radio", "aura", "bundle", "crate", "box", "coin", "gem", "currency"}
+local NONWEAPON = {"pet", "effect", "emote", "perk", "trail", "radio", "aura", "bundle", "crate", "box", "coin", "gem", "currency", "candy", "sweet", "treat"}
 local WEAPON = {"knife", "gun", "weapon", "blade", "sword", "melee", "revolver", "pistol", "luger", "scythe", "axe", "godly", "chroma"}
 local function hasAny(s, list) for _, w in ipairs(list) do if string.find(s, w, 1, true) then return true end end return false end
 -- exact price: whole numbers get thousands separators, decimals are kept (trimmed)
@@ -3841,7 +4000,7 @@ local function normalKillAura()
     if role == "Murderer" then
         local k = getKnife()
         if k then
-            if k.Parent ~= ch then hum:EquipTool(k); task.wait(0.05) end
+            -- no visible equip: fire the same touch remote the knife uses, straight from wherever it sits (hand or backpack)
             for _, p in ipairs(Players:GetPlayers()) do
                 if p ~= LocalPlayer and p.Character and not isRealNpc(p) then
                     local thrp = p.Character:FindFirstChild("HumanoidRootPart")
@@ -4001,6 +4160,9 @@ end})
 SheriffSec:AddToggle({Name="shoot through walls", Default=CFG.shootThroughWalls, Callback=function(v) State.shootThroughWalls=v; CFG.shootThroughWalls=v; saveCFG() end})
 SheriffSec:AddToggle({Name="predict movement", Default=CFG.predictMovement, Callback=function(v) State.predictMovement=v; CFG.predictMovement=v; saveCFG() end})
 SheriffSec:AddToggle({Name="gun silent aim", Callback=function(v) State.silentGun=v end})
+State.putAwayAfterKill=CFG.putAwayAfterKill~=false
+SheriffSec:AddToggle({Name="put gun away after kill", Default=CFG.putAwayAfterKill~=false, Callback=function(v) State.putAwayAfterKill=v; CFG.putAwayAfterKill=v; saveCFG() end})
+SheriffSec:AddSlider({Name="keep it away for (s)", Min=1, Max=10, Default=tonumber(CFG.putAwaySeconds) or 3, Callback=function(v) CFG.putAwaySeconds=v; saveCFG() end})
 SheriffSec:AddToggle({Name="knife throw silent aim", Callback=function(v) State.silentKnife=v end})
 local KillFxSec = CombatTab:AddSection({Name="kill features", Side="Left"})
 KillFxSec:AddToggle({Name="eye laser", Callback=function(v) KillFx.EyeLaser=v; if not v then for _,k_ in ipairs({"_beam","_beam2"}) do if KillFx[k_] then pcall(function() KillFx[k_]:Destroy() end); KillFx[k_]=nil end end end end})
@@ -4084,6 +4246,10 @@ for _,n in ipairs({"Night","Deep Night","Sunset","Dawn","Rainy","Foggy","Storm",
     LightSec:AddButton({Name=n, Callback=function() applyLightingPreset(n); X.LT.fb=nil; X.LT.time=nil; X.LT.bright=nil; X.LT.snap=(n~="Default") and X.LT.snapNow() or nil end})
 end
 local WeatherSec = VisualsTab:AddSection({Name="weather", Side="Right"})
+WeatherSec:AddToggle({Name="mute gunshots", Default=X.MUTE.gun, Callback=function(v) X.MUTE.gun=v; CFG.muteGun=v; saveCFG(); if not v then X.MUTE.restore("gun") end end})
+WeatherSec:AddToggle({Name="mute round win", Default=X.MUTE.win, Callback=function(v) X.MUTE.win=v; CFG.muteWin=v; saveCFG(); if not v then X.MUTE.restore("win") end end})
+WeatherSec:AddToggle({Name="mute kill sound", Default=X.MUTE.kill, Callback=function(v) X.MUTE.kill=v; CFG.muteKill=v; saveCFG(); if not v then X.MUTE.restore("kill") end end})
+WeatherSec:AddToggle({Name="mute death sound", Default=X.MUTE.death, Callback=function(v) X.MUTE.death=v; CFG.muteDeath=v; saveCFG(); if not v then X.MUTE.restore("death") end end})
 WeatherSec:AddButton({Name="none", Callback=function() clearWeather() end})
 WeatherSec:AddButton({Name="rain", Callback=function() spawnWeather("Rain") end})
 WeatherSec:AddButton({Name="snow", Callback=function() spawnWeather("Snow") end})
@@ -4197,18 +4363,22 @@ TpSec:AddButton({Name="tp map", Callback=function()
     Library:Notify({Title="teleport", Text="no map is loaded right now", Duration=3})
 end})
 TpSec:AddButton({Name="tp secret room (halloween)", Callback=function()
+    local KEYS1 = {"secret", "hidden room", "hiddenroom", "easter"}
+    local KEYS2 = {"crypt", "basement", "catacomb", "dungeon", "vault", "lair", "cave", "tomb", "grave"}
     local best
     for _, d in ipairs(WS:GetDescendants()) do
-        if d:IsA("Model") or d:IsA("BasePart") then
+        if d:IsA("Model") or d:IsA("BasePart") or d:IsA("Folder") then
             local n = string.lower(d.Name)
-            if string.find(n, "secret", 1, true) or string.find(n, "hidden room", 1, true) or string.find(n, "easter", 1, true) then best = d; break end
+            for _, k in ipairs(KEYS1) do if string.find(n, k, 1, true) then best = d; break end end
+            if best then break end
         end
     end
     if not best then
         for _, d in ipairs(WS:GetDescendants()) do
-            if d:IsA("Model") or d:IsA("BasePart") then
+            if d:IsA("Model") or d:IsA("BasePart") or d:IsA("Folder") then
                 local n = string.lower(d.Name)
-                if string.find(n, "halloween", 1, true) and (string.find(n, "room", 1, true) or string.find(n, "crypt", 1, true) or string.find(n, "basement", 1, true)) then best = d; break end
+                for _, k in ipairs(KEYS2) do if string.find(n, k, 1, true) then best = d; break end end
+                if best then break end
             end
         end
     end
@@ -4865,6 +5035,7 @@ function X.SK.fromId(kind, v)
         X.SK.refresh()
     end)
 end
+do local __ok,__err=pcall(function()
 X.NOIRDATA = {
 [=[
 --[[
@@ -7904,7 +8075,6 @@ NoirGenv().__NoirSkinsDestroy = destroySkins
 NoirGenv().__NoirSkinsState = installState
 ]=],
 }
-do local __ok,__err=pcall(function()
 X.NOIR = {loaded = false, loading = false}
 function X.NOIR.env() return (getgenv and getgenv()) or _G end
 function X.NOIR.state() return X.NOIR.env().__NoirSkinsState end
@@ -7950,7 +8120,7 @@ function X.NOIR.load(cb)
     end)
 end
 function X.NOIR.setEnabled(v)
-    if v then X.NOIR.load(function() local st = X.NOIR.state(); if st then st.enabled = true end end)
+    if v then X.NOIR.load(function() local st = X.NOIR.state(); if st then st.enabled = true end; X.NOIR.setBelt(true) end)
     else local st = X.NOIR.state(); if st then st.enabled = false end end
 end
 function X.NOIR.setBelt(v)
@@ -7965,12 +8135,11 @@ end
 
 end)
 if not __ok then warn("[piddle] module 'noir' failed: "..tostring(__err)); pcall(function() Library:Notify({Title="piddle",Text="module 'noir' failed: "..tostring(__err),Duration=10}) end) end end
-SkinSec:AddLabel({Name="needs Noir_Skinchanger.lua in the executor workspace folder (or a link). skins are picked on the Changer page in the game inventory"})
-SkinSec:AddToggle({Name="skin changer", Default=CFG.noirSkins==true, Callback=function(v) CFG.noirSkins=v; saveCFG(); X.NOIR.setEnabled(v) end})
-SkinSec:AddToggle({Name="knife on belt", Default=CFG.noirBelt==true, Callback=function(v) CFG.noirBelt=v; saveCFG(); X.NOIR.setBelt(v) end})
+SkinSec:AddLabel({Name="needs Noir_Skinchanger.lua in the executor workspace folder (or a link). once enabled, the skin changer opens as its own separate window in the game's main menu - pick skins there, not in this UI"})
+SkinSec:AddToggle({Name="skin changer", Default=CFG.noirSkins==true, Callback=function(v) CFG.noirSkins=v; saveCFG(); X.NOIR.setEnabled(v); if v then X.NOIR.setBelt(true) end end})
 SkinSec:AddTextbox({Name="skin changer link (optional)", Placeholder="raw link to Noir_Skinchanger.lua", Default=CFG.noirUrl or "", Callback=function(v) CFG.noirUrl=tostring(v or ""); saveCFG() end})
 SkinSec:AddButton({Name="unload skin changer", Callback=function() X.NOIR.destroy() end})
-if CFG.noirSkins then task.delay(3, function() X.NOIR.setEnabled(true); if CFG.noirBelt then X.NOIR.setBelt(true) end end) end
+if CFG.noirSkins then task.delay(3, function() X.NOIR.setEnabled(true) end) end
 task.spawn(function()
     task.wait(2)
     if CFG.gunSkinAssetId and tostring(CFG.gunSkinAssetId) ~= "" then pcall(X.SK.fromId, "gun", CFG.gunSkinAssetId) end
@@ -8558,8 +8727,8 @@ local MV = {
     origin = nil,
     spot = nil,
     conns = {},
-    yOff = -4,
-    offs = {0, -0.6, -1.2, 0.6, -1.8, 1.2, -2.4},
+    yOff = -0.05,
+    offs = {0, -0.03, -0.06, 0.03, -0.09, 0.06, -0.12},
     offIdx = 1,
     PLATFORMS = {
         Vector3.new(25.69, 507.37, 49.26),
@@ -8850,7 +9019,7 @@ function MV.run(id, slot)
         if hrp and hum and hum.Health > 0 then
             local spot = MV.spotFor(slot) or MV.spot
             MV.spot = spot
-            hrp.CFrame = CFrame.new(spot)
+            hrp.AssemblyLinearVelocity = Vector3.zero; hrp.CFrame = CFrame.new(spot)
             hrp.AssemblyLinearVelocity = Vector3.zero
             if entry and entry.pad then EX.touch(hrp, entry.pad, true) end
             local limit = (not MV.dupe) and 0.1 or win
@@ -8859,7 +9028,7 @@ function MV.run(id, slot)
             while alive() and MV.pick == slot and os.clock() - tt < limit do
                 if MV.dupe and entry and MV.tallyOf(entry) > last then got = true; break end
                 if hrp.Parent and (hrp.Position - spot).Magnitude > 3 then
-                    hrp.CFrame = CFrame.new(spot)
+                    hrp.AssemblyLinearVelocity = Vector3.zero; hrp.CFrame = CFrame.new(spot)
                 end
                 RunService.Heartbeat:Wait()
             end
@@ -8926,7 +9095,7 @@ function MV.begin()
     MV.spot = spot
     MV.mark = entry and MV.tallyOf(entry) or 0
     MV.startTally = MV.mark
-    hrp.CFrame = CFrame.new(spot)
+    hrp.AssemblyLinearVelocity = Vector3.zero; hrp.CFrame = CFrame.new(spot)
     if entry and entry.pad then EX.touch(hrp, entry.pad, true) end
     if not MV.dupe then
         task.delay(math.max(0.15, PING * 2 + 0.12), function()
@@ -9144,9 +9313,48 @@ local myTotal,hisTotal=0,0
 local myItems,hisItems={},{}
 local myLbl=TradeSec:AddLabel({Name="your total: 0"})
 local hisLbl=TradeSec:AddLabel({Name="their total: 0"})
-local searchInput=TradeSec:AddTextbox({Name="item", Placeholder="search..."})
-TradeSec:AddButton({Name="add my", Callback=function() local item=findTradeItem(searchInput:Get()); if item then table.insert(myItems,item); myTotal=0; for _,v in ipairs(myItems) do myTotal=myTotal+(v.value or 0) end; myLbl:SetText("your total: "..myTotal); searchInput:Set("") end end})
-TradeSec:AddButton({Name="add his", Callback=function() local item=findTradeItem(searchInput:Get()); if item then table.insert(hisItems,item); hisTotal=0; for _,v in ipairs(hisItems) do hisTotal=hisTotal+(v.value or 0) end; hisLbl:SetText("their total: "..hisTotal); searchInput:Set("") end end})
+-- live, alphabetical, type-as-you-go item search (like a search engine), across every weapon in the database
+local pickedItem = nil
+local acRow = New("Frame", {Size = UDim2.new(1, 0, 0, 22), AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1, LayoutOrder = (TradeSec._order or 0) + 1, Parent = TradeSec.Holder})
+TradeSec._order = (TradeSec._order or 0) + 1
+Label({Size = UDim2.new(0.4, -8, 0, 22), Position = UDim2.fromOffset(8, 0), Text = "item", TextColor3 = Theme.Dim, Parent = acRow})
+local acBoxHolder = New("Frame", {Size = UDim2.new(0.6, -10, 0, 20), Position = UDim2.new(0.4, 2, 0, 1), BackgroundColor3 = Theme.Box, Parent = acRow})
+Corner(acBoxHolder, 4); local acStroke = Stroke(acBoxHolder, Theme.Stroke)
+local acBox = New("TextBox", {Size = UDim2.new(1, -10, 1, 0), Position = UDim2.fromOffset(5, 0), BackgroundTransparency = 1, Text = "", PlaceholderText = "type a weapon name...", PlaceholderColor3 = Theme.Dimmer, TextColor3 = Theme.Text, Font = Theme.Font, TextSize = 10, ClearTextOnFocus = false, Parent = acBoxHolder})
+local acList = New("Frame", {Size = UDim2.new(0.6, -10, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, Position = UDim2.new(0.4, 2, 0, 23), BackgroundColor3 = Theme.Box, Visible = false, LayoutOrder = 2, Parent = acRow})
+Corner(acList, 4); Stroke(acList, Theme.Stroke); List(acList, 0); Padding(acList, 0, 2, 0, 2)
+local function acClose() acList.Visible = false end
+local function acOpen(query)
+    local q = normKey(query)
+    for _, ch in ipairs(acList:GetChildren()) do if ch:IsA("TextButton") then ch:Destroy() end end
+    if q == "" then acClose(); return end
+    local matches = {}
+    for _, it in ipairs(TRADE.items) do
+        if it.key:find(q, 1, true) or it.slugKey:find(q, 1, true) then matches[#matches + 1] = it end
+    end
+    table.sort(matches, function(a, b) return (a.name or a.key) < (b.name or b.key) end)
+    if #matches == 0 then acClose(); return end
+    for i = 1, math.min(#matches, 8) do
+        local it = matches[i]
+        local b = New("TextButton", {Size = UDim2.new(1, 0, 0, 20), BackgroundTransparency = 1, Text = "", LayoutOrder = i, Parent = acList})
+        Label({Size = UDim2.new(1, -46, 1, 0), Position = UDim2.fromOffset(8, 0), Text = it.name or it.key, TextColor3 = Theme.Dim, TextSize = 10, TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd, Parent = b})
+        Label({Size = UDim2.new(0, 40, 1, 0), Position = UDim2.new(1, -44, 0, 0), Text = "$" .. tostring(it.value or 0), TextColor3 = Theme.Dimmer, TextSize = 9, TextXAlignment = Enum.TextXAlignment.Right, Parent = b})
+        Connect(b.MouseEnter, function() for _, c2 in ipairs(acList:GetChildren()) do if c2:IsA("TextButton") then c2.BackgroundTransparency = 1 end end; b.BackgroundTransparency = 0.85; b.BackgroundColor3 = Theme.Row end)
+        Connect(b.MouseButton1Click, function()
+            playSound(Sounds.Click, 0.5)
+            pickedItem = it
+            acBox.Text = it.name or it.key
+            acClose()
+        end)
+    end
+    acList.Visible = true
+end
+Connect(acBox:GetPropertyChangedSignal("Text"), function() pickedItem = nil; acOpen(acBox.Text) end)
+Connect(acBox.Focused, function() Tween(acStroke, TWEEN_FAST, {Color = Theme.Accent}); if acBox.Text ~= "" then acOpen(acBox.Text) end end)
+Connect(acBox.FocusLost, function() Tween(acStroke, TWEEN_FAST, {Color = Theme.Stroke}); task.delay(0.15, acClose) end)
+local function currentPick() return pickedItem or findTradeItem(acBox.Text) end
+TradeSec:AddButton({Name="add my", Callback=function() local item=currentPick(); if item then table.insert(myItems,item); myTotal=0; for _,v in ipairs(myItems) do myTotal=myTotal+(v.value or 0) end; myLbl:SetText("your total: "..myTotal) end end})
+TradeSec:AddButton({Name="add his", Callback=function() local item=currentPick(); if item then table.insert(hisItems,item); hisTotal=0; for _,v in ipairs(hisItems) do hisTotal=hisTotal+(v.value or 0) end; hisLbl:SetText("their total: "..hisTotal) end end})
 TradeSec:AddButton({Name="clear", Callback=function() myItems={}; hisItems={}; myTotal=0; hisTotal=0; myLbl:SetText("your total: 0"); hisLbl:SetText("their total: 0") end})
 local TradeHelperSec = TradeTab:AddSection({Name="trade helper", Side="Right"})
 TradeHelperSec:AddToggle({Name="show price on items", Default=State.tradeHelperOn, Callback=function(v) State.tradeHelperOn=v; CFG.tradeHelperOn=v; saveCFG() end})
@@ -11282,8 +11490,8 @@ local DEFS = {
     {id = "knifesilent", name = "knife silent aim", def = "J", toggle = "knife throw silent aim"},
     {id = "fakepos", name = "fake position", def = "P", toggle = "fake position"},
     {id = "autogun",  name = "auto get gun",    def = "O", toggle = "auto get gun"},
-    {id = "touchfling", name = "touch fling",   def = "T", toggle = "touch fling"},
-    {id = "minigames",name = "minigames panel", def = "M", act = function() X.MG.setOpen(not X.MG.open) end, state = function() return X.MG.open end},
+    {id = "touchfling", name = "touch fling",   def = "F7", toggle = "touch fling"},
+    {id = "minigames",name = "minigames panel", def = "F6", act = function() X.MG.setOpen(not X.MG.open) end, state = function() return X.MG.open end},
     {id = "hud",      name = "hotkey hud",      def = "H", act = function() HK.setHud(not HK.hudOn) end, state = function() return HK.hudOn end},
 }
 for _, d in ipairs(DEFS) do
@@ -11407,8 +11615,7 @@ end})
 BgSec:AddSlider({Name="wallpaper density", Min=6, Max=40, Default=X.ANIM.count, Callback=function(v) X.ANIM.count=v; CFG.triCount=v; saveCFG(); if X.ANIM.on then X.ANIM.build() end end})
 BgSec:AddSlider({Name="wallpaper speed", Min=20, Max=300, Default=X.ANIM.speed, Callback=function(v) X.ANIM.speed=v; CFG.triSpeed=v; saveCFG() end})
 BgSec:AddSlider({Name="line max length", Min=30, Max=400, Default=X.ANIM.lineMax, Callback=function(v) X.ANIM.lineMax=v; CFG.netLineMax=v; saveCFG() end})
-BgSec:AddSlider({Name="ball size min", Min=0.1, Max=10, Increment=0.1, Default=X.ANIM.sizeMin, Callback=function(v) X.ANIM.sizeMin=v; CFG.netSizeMin=v; saveCFG() end})
-BgSec:AddSlider({Name="ball size max", Min=0.1, Max=10, Increment=0.1, Default=X.ANIM.sizeMax, Callback=function(v) X.ANIM.sizeMax=v; CFG.netSizeMax=v; saveCFG() end})
+Library.AddRangeSlider(BgSec, {Name="ball size", Min=0.1, Max=10, Increment=0.1, DefaultMin=X.ANIM.sizeMin, DefaultMax=X.ANIM.sizeMax, Callback=function(lo, hi) X.ANIM.sizeMin=lo; X.ANIM.sizeMax=hi; CFG.netSizeMin=lo; CFG.netSizeMax=hi; saveCFG() end})
 BgSec:AddColorPicker({Name="dot color", Default=X.ANIM.dotColor or Theme.Accent, Callback=function(c) X.ANIM.setDotColor(c) end})
 BgSec:AddColorPicker({Name="line color", Default=X.ANIM.lineColor or Theme.Accent, Callback=function(c) X.ANIM.setLineColor(c) end})
 BgSec:AddColorPicker({Name="triangle color", Default=X.ANIM.color or Color3.fromRGB(235,235,245), Callback=function(c) X.ANIM.recolor(c) end})
