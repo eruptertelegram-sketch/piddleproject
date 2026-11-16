@@ -683,7 +683,7 @@ function Library.AddRangeSlider(sec, opt)
         end)
     end
     drag(kLo, true); drag(kHi, false)
-    return {set = function(a, b) lo, hi = a, b; place() end, get = function() return lo, hi end}
+    return {row = row, set = function(a, b) lo, hi = a, b; place() end, get = function() return lo, hi end}
 end
 
 
@@ -3332,28 +3332,50 @@ function X.dodgeThreat(root)
 end
 
 do local __ok,__err=pcall(function()
-function X.dodgeSpot(root, away, dd)
+-- picks a heading that is actually open right now (same multi-angle scan as before) instead of a single fixed spot
+function X.dodgeDir(root, away, dd)
     dd = dd or UD.DodgeDist
-    local origin=root.Position
-    local fh=WS.FallenPartsDestroyHeight
-    if fh~=fh then fh=-500 end
-    local voidY=fh+25
-    local myFloor=WS:Raycast(origin,Vector3.new(0,-15,0),envParams)
-    local height=myFloor and (origin.Y-myFloor.Position.Y) or 3
-    local baseY=myFloor and myFloor.Position.Y or (origin.Y-3)
-    for _,deg in ipairs({0,35,-35,70,-70,110,-110,150,-150,180}) do
-        local dir=CFrame.Angles(0,math.rad(deg),0)*away
-        local wall=WS:Raycast(origin,dir*dd,envParams)
-        local d=wall and math.max(wall.Distance-UD.WallBuffer,0) or dd
-        if d>=2 then
-            local target=origin+dir*d
-            local floor=WS:Raycast(target+Vector3.new(0,4,0),Vector3.new(0,-30,0),envParams)
-            if floor and floor.Position.Y>voidY and math.abs(floor.Position.Y-baseY)<=12 then
-                return Vector3.new(target.X,floor.Position.Y+height,target.Z)
-            end
+    local origin = root.Position
+    for _, deg in ipairs({0, 35, -35, 70, -70, 110, -110, 150, -150, 180}) do
+        local dir = CFrame.Angles(0, math.rad(deg), 0) * away
+        local wall = WS:Raycast(origin, dir * dd, envParams)
+        local d = wall and math.max(wall.Distance - UD.WallBuffer, 0) or dd
+        if d >= 2 then
+            local flat = Vector3.new(dir.X, 0, dir.Z)
+            if flat.Magnitude > 0.05 then return flat.Unit, d end
         end
     end
     return nil
+end
+
+-- smooth, continuously-validated dash: re-checks the wall every step and slides along it instead of
+-- teleporting straight into a spot that can turn out to be wrong (which used to wedge you against geometry
+-- and let the murderer close the gap while you were stuck)
+function X.dodgeDash(root, dir, maxDist)
+    maxDist = math.max(maxDist or UD.DodgeDist, 2)
+    local dur = 0.16
+    local speed = maxDist / dur
+    local t0 = tick()
+    local travelled = 0
+    local conn
+    local function stop()
+        if conn then conn:Disconnect(); conn = nil end
+        pcall(function() if root.Parent then root.AssemblyLinearVelocity = Vector3.new(0, root.AssemblyLinearVelocity.Y, 0) end end)
+    end
+    conn = Connect(RunService.Heartbeat, function(dt)
+        if not root.Parent or tick() - t0 > dur or travelled >= maxDist then stop(); return end
+        local pos = root.Position
+        local ahead = WS:Raycast(pos, dir * 2.2, envParams)
+        if ahead then
+            local n = ahead.Normal
+            local slid = dir - n * dir:Dot(n)
+            if slid.Magnitude > 0.15 then dir = slid.Unit else stop(); return end
+        end
+        local floor = WS:Raycast(pos + dir * 2 + Vector3.new(0, 1, 0), Vector3.new(0, -8, 0), envParams)
+        if not floor then stop(); return end -- don't dash off a ledge into the void
+        root.AssemblyLinearVelocity = Vector3.new(dir.X * speed, root.AssemblyLinearVelocity.Y, dir.Z * speed)
+        travelled = travelled + speed * dt
+    end)
 end
 
 -- thrown knives / bullets are tracked as projectiles and dodged sideways
@@ -3385,7 +3407,8 @@ RunService.Heartbeat:Connect(function()
     local hum=ch and ch:FindFirstChildOfClass("Humanoid")
     if not root or not hum or hum.Health<=0 then return end
     -- only dodge while a round is actually running and we are alive in it (no random teleports in the lobby / after the round)
-    if getRole(LocalPlayer) == "NPC" then return end
+    local myData = rolesCache[LocalPlayer.Name]
+    if not (myData and myData.Role) or myData.Killed or myData.Dead then return end
     local now=tick()
     if UD.isDodging or now-UD.lastDodgeTime<math.min(UD.BaseCooldown, 0.3) then return end
     local away, hop
@@ -3430,13 +3453,10 @@ RunService.Heartbeat:Connect(function()
     end
     if not away then return end
     UD.isDodging=true
-    local okd,spot=pcall(X.dodgeSpot,root,away,hop)
-    if not okd then spot=nil end
-    if spot then
-        root.AssemblyLinearVelocity=Vector3.zero
-        root.AssemblyAngularVelocity=Vector3.zero
-        root.CFrame=CFrame.new(spot)*(root.CFrame-root.CFrame.Position)
-        UD.lastDodgeTime=now
+    local okd, dir, dist = pcall(X.dodgeDir, root, away, hop)
+    if okd and dir then
+        X.dodgeDash(root, dir, dist)
+        UD.lastDodgeTime = now
     end
     task.wait(0.05)
     UD.isDodging=false
@@ -4563,8 +4583,8 @@ Connect(RunService.Stepped,function()
     end
 end)
 
-local MiscTab = Win:AddTab({Name="misc", Subtitle="auto"})
-local MiscSec = MiscTab:AddSection({Name="auto", Side="Left"})
+-- the "misc" tab was removed; these toggles now live in the farm tab
+local MiscSec = FarmSec
 MiscSec:AddToggle({Name="auto-respawn", Callback=function(o) State.autoRespawn=o end})
 MiscSec:AddToggle({Name="fast-respawn", Callback=function(o) State.fastRespawn=o end})
 MiscSec:AddToggle({Name="anti-void", Callback=function(o) State.antiVoid=o end})
@@ -8176,7 +8196,7 @@ function X.initTracer(sec)
     local G = {
         on = CFG.bulletTracerOn ~= false,
         method = CFG.tracerMethod or "Classic",
-        style = CFG.tracerStyle or "Energy",
+        style = CFG.tracerStyle or "Realistic",
         col = (typeof(CFG.tracerCol) == "Color3" and CFG.tracerCol) or Color3.fromRGB(110, 190, 255),
         col2 = (typeof(CFG.tracerCol2) == "Color3" and CFG.tracerCol2) or Color3.fromRGB(255, 90, 210),
         rainbow = CFG.tracerRainbow == true,
@@ -8244,9 +8264,14 @@ function X.initTracer(sec)
             { tex = "dust", w = 3.2, spd = 3, br = 3.5, a = 1, mix = 0.3, wrap = 5 },
             { tex = "core", w = 0.8, spd = 3, br = 3, a = 1, mix = 0.75 },
         },
+        Realistic = {
+            -- thin, fast, faint amber-white streak - a real bullet tracer, not a neon beam
+            { tex = "core", w = 1.1, spd = 6, br = 2.2, a = 0.55, mix = 0 },
+            { tex = "core", w = 0.35, spd = 6, br = 3.2, a = 1, mix = 0.8 },
+        },
     }
     if not Styles[G.style] then G.style = "Energy" end
-    local StyleList = {"Energy", "Laser", "Lightning", "Plasma", "Fire", "Smoke", "Stardust"}
+    local StyleList = {"Energy", "Laser", "Lightning", "Plasma", "Fire", "Smoke", "Stardust", "Realistic"}
 
     local function logTracer(msg)
         G.log[#G.log + 1] = string.format("%.2f %s", os.clock(), msg)
@@ -9329,8 +9354,10 @@ local function acOpen(query)
     for _, ch in ipairs(acList:GetChildren()) do if ch:IsA("TextButton") then ch:Destroy() end end
     if q == "" then acClose(); return end
     local matches = {}
+    local qlen = #q
     for _, it in ipairs(TRADE.items) do
-        if it.key:find(q, 1, true) or it.slugKey:find(q, 1, true) then matches[#matches + 1] = it end
+        -- starts-with only (like a dictionary): typing "G" lists every weapon beginning with G, alphabetically
+        if string.sub(it.key, 1, qlen) == q or (it.slugKey ~= "" and string.sub(it.slugKey, 1, qlen) == q) then matches[#matches + 1] = it end
     end
     table.sort(matches, function(a, b) return (a.name or a.key) < (b.name or b.key) end)
     if #matches == 0 then acClose(); return end
@@ -9954,6 +9981,173 @@ function TT.bot(b, n, k, me, level, rng)
     return bm[1], bm[2]
 end
 
+------------------------------------------------------------ CONNECT FOUR (gravity drop, 7 wide x 6 tall)
+local C4 = {}
+L.C4 = C4
+C4.W, C4.H = 7, 6
+function C4.new() local b = {}; for i = 1, C4.W * C4.H do b[i] = 0 end; return b end
+local function c4at(b, x, y) if x < 0 or y < 0 or x >= C4.W or y >= C4.H then return nil end return b[y * C4.W + x + 1] end
+function C4.drop(b, col, side)
+    for y = C4.H - 1, 0, -1 do
+        if c4at(b, col, y) == 0 then b[y * C4.W + col + 1] = side; return col, y end
+    end
+    return nil
+end
+function C4.colFull(b, col) return c4at(b, col, 0) ~= 0 end
+function C4.full(b) for c = 0, C4.W - 1 do if not C4.colFull(b, c) then return false end end return true end
+local C4DIRS = {{1, 0}, {0, 1}, {1, 1}, {1, -1}}
+function C4.winLine(b, x, y)
+    local p = c4at(b, x, y)
+    if not p or p == 0 then return nil end
+    for _, d in ipairs(C4DIRS) do
+        local cells = {y * C4.W + x + 1}
+        for s = -1, 1, 2 do
+            local cx, cy = x + d[1] * s, y + d[2] * s
+            while c4at(b, cx, cy) == p do cells[#cells + 1] = cy * C4.W + cx + 1; cx = cx + d[1] * s; cy = cy + d[2] * s end
+        end
+        if #cells >= 4 then return cells end
+    end
+    return nil
+end
+function C4.wins(b, x, y) return C4.winLine(b, x, y) ~= nil end
+local function c4score(b, x, y, p)
+    local tot = 0
+    for _, d in ipairs(C4DIRS) do
+        local cnt, openEnds = 1, 0
+        for s = -1, 1, 2 do
+            local cx, cy = x + d[1] * s, y + d[2] * s
+            while c4at(b, cx, cy) == p do cnt = cnt + 1; cx = cx + d[1] * s; cy = cy + d[2] * s end
+            if c4at(b, cx, cy) == 0 then openEnds = openEnds + 1 end
+        end
+        if cnt >= 4 then tot = tot + 1e6
+        elseif openEnds > 0 then tot = tot + 10 ^ cnt * (openEnds == 2 and 3 or 1) end
+    end
+    return tot
+end
+local function c4avail(b)
+    local c = {}
+    for col = 0, C4.W - 1 do if not C4.colFull(b, col) then c[#c + 1] = col end end
+    return c
+end
+-- evaluate dropping in `col` for `me`: reward own threats, heavily penalize the best reply left for the opponent
+local function c4eval(b, col, me, opp, lookahead)
+    local cx, cy = C4.drop(b, col, me)
+    if not cx then return -math.huge end
+    local v
+    if C4.wins(b, cx, cy) then
+        v = 100000
+    else
+        local myScore = c4score(b, cx, cy, me)
+        local worstOpp = 0
+        for _, oc in ipairs(c4avail(b)) do
+            local ox, oy = C4.drop(b, oc, opp)
+            local oppScore = C4.wins(b, ox, oy) and 100000 or c4score(b, ox, oy, opp)
+            b[oy * C4.W + ox + 1] = 0
+            if oppScore > worstOpp then worstOpp = oppScore end
+        end
+        v = myScore - worstOpp * 0.9
+        if lookahead and lookahead > 1 then v = v + myScore * 0.05 end
+    end
+    b[cy * C4.W + cx + 1] = 0
+    return v
+end
+
+-- level 1..4 ; returns x,y
+function TT.bot(b, n, k, me, level, rng)
+    local opp = me == 1 and 2 or 1
+    local cands = candidates(b, n, 2)
+    -- immediate win / block
+    local function findWin(p)
+        for _, c in ipairs(cands) do
+            b[c[2] * n + c[1] + 1] = p
+            local w = TT.wins(b, n, k, c[1], c[2])
+            b[c[2] * n + c[1] + 1] = 0
+            if w then return c end
+        end
+    end
+    if level == 1 and rng() < 0.4 then
+        local all = {}
+        for i = 1, n * n do if b[i] == 0 then all[#all + 1] = {(i - 1) % n, math.floor((i - 1) / n)} end end
+        local c = all[rng(#all)]; return c[1], c[2]
+    end
+    local w = findWin(me); if w then return w[1], w[2] end
+    local bl = findWin(opp)
+    if bl and (level >= 2 or rng() < 0.7) then return bl[1], bl[2] end
+    if level == 1 then
+        local c = cands[rng(#cands)]; return c[1], c[2]
+    end
+    if n * n <= 9 and level == 3 and rng() < 0.15 then
+        local all = {}
+        for i = 1, n * n do if b[i] == 0 then all[#all + 1] = {(i - 1) % n, math.floor((i - 1) / n)} end end
+        local c = all[rng(#all)]; return c[1], c[2]
+    end
+    if n * n <= 9 and level >= 3 then
+        local bestV, bm = -math.huge, nil
+        for i = 1, 9 do
+            if b[i] == 0 then
+                local x, y = (i - 1) % n, math.floor((i - 1) / n)
+                b[i] = me
+                local v = minimax(b, n, k, opp, me, opp, -math.huge, math.huge, 1)
+                b[i] = 0
+                if v > bestV then bestV = v; bm = {x, y} end
+            end
+        end
+        if bm then return bm[1], bm[2] end
+    end
+    local scored = {}
+    for _, c in ipairs(cands) do scored[#scored + 1] = {c[1], c[2], heur(b, n, k, c[1], c[2], me, opp)} end
+    table.sort(scored, function(a, z) return a[3] > z[3] end)
+    if level == 2 then
+        local pick = scored[rng(math.min(3, #scored))]
+        return pick[1], pick[2]
+    end
+    if level == 3 then return scored[1][1], scored[1][2] end
+    -- level 4: 2-ply (my move, their best reply)
+    local top = math.min(8, #scored)
+    local bestV, bm = -math.huge, scored[1]
+    for t = 1, top do
+        local s = scored[t]
+        b[s[2] * n + s[1] + 1] = me
+        local worst = 0
+        for _, c in ipairs(candidates(b, n, 1)) do
+            local sc = cellScore(b, n, k, c[1], c[2], opp) + 0.5 * cellScore(b, n, k, c[1], c[2], me)
+            if sc > worst then worst = sc end
+        end
+        b[s[2] * n + s[1] + 1] = 0
+        local v = s[3] - 0.9 * worst
+        if v > bestV then bestV = v; bm = s end
+    end
+    return bm[1], bm[2]
+end
+
+function C4.bot(b, me, level, rng)
+    local opp = me == 1 and 2 or 1
+    local avail = c4avail(b)
+    local function findWin(p)
+        for _, c in ipairs(avail) do
+            local x, y = C4.drop(b, c, p)
+            local w = C4.wins(b, x, y)
+            b[y * C4.W + x + 1] = 0
+            if w then return c end
+        end
+    end
+    if level == 1 and rng() < 0.35 then return avail[rng(#avail)] end
+    local w = findWin(me); if w then return w end
+    local bl = findWin(opp)
+    if bl and (level >= 2 or rng() < 0.7) then return bl end
+    if level == 1 then return avail[rng(#avail)] end
+    local order = {}
+    for _, c in ipairs(avail) do order[#order + 1] = c end
+    table.sort(order, function(a, z) return math.abs(a - 3) < math.abs(z - 3) end)
+    local depth = ({1, 1, 2, 3})[level]
+    local bestV, bestC = -math.huge, order[1]
+    for _, c in ipairs(order) do
+        local v = c4eval(b, c, me, opp, depth) + rng() * (level == 2 and 40 or 2)
+        if v > bestV then bestV = v; bestC = c end
+    end
+    return bestC
+end
+
 ------------------------------------------------------------ BATTLESHIP (Russian fleet: 1x4, 2x3, 3x2, 4x1; ships may not touch)
 local BS = {}
 L.BS = BS
@@ -10123,7 +10317,7 @@ return L
 end)()
 ;(function()
 local LG = X.MG.L
-local MS, TT, BS = LG.MS, LG.TT, LG.BS
+local MS, TT, BS, C4 = LG.MS, LG.TT, LG.BS, LG.C4
 local DIFFS = {"easy", "normal", "hard", "impossible"}
 local MG = X.MG
 MG.diff = 1
@@ -10239,7 +10433,7 @@ local PAL = {
     good = Color3.fromRGB(96, 214, 128), bad = Color3.fromRGB(240, 98, 104), warn = Color3.fromRGB(255, 196, 84),
 }
 local DCOL = {Color3.fromRGB(96, 214, 128), Color3.fromRGB(90, 160, 255), Color3.fromRGB(255, 176, 70), Color3.fromRGB(240, 98, 104)}
-local ACC = {ms = Color3.fromRGB(90, 160, 255), ttt = Color3.fromRGB(255, 118, 128), bs = Color3.fromRGB(70, 206, 200), dino = Color3.fromRGB(120, 220, 130)}
+local ACC = {ms = Color3.fromRGB(90, 160, 255), ttt = Color3.fromRGB(255, 118, 128), bs = Color3.fromRGB(70, 206, 200), dino = Color3.fromRGB(120, 220, 130), c4 = Color3.fromRGB(255, 196, 84)}
 local FONT, FONTB = Enum.Font.GothamMedium, Enum.Font.GothamBold
 local function corner(o, r) local c = Instance.new("UICorner"); c.CornerRadius = UDim.new(0, r or 6); c.Parent = o; return c end
 local function stroke(o, col, th, tr)
@@ -10708,6 +10902,104 @@ function MG.ttt(diff, ses)
     return ctl
 end
 
+------------------------------------------------------------------ CONNECT FOUR
+local C4W, C4H = 7, 6
+local C4COL1, C4COL2 = Color3.fromRGB(255, 118, 128), Color3.fromRGB(100, 170, 255)
+function MG.c4(diff, ses)
+    local b = C4.new()
+    local rng = LG.RNG(os.time() + math.random(1, 9999))
+    local mySide = (ses and ses.role == "guest") and 2 or 1
+    local turn, over, alive = 1, false, true
+    local cs = 42
+    local boardW, boardH = C4W * cs + 4, C4H * cs + 4
+    setContent(boardW, boardH + 34)
+    setTitle("Connect Four", diff, ses and ses.opp, Color3.fromRGB(255, 196, 84))
+    -- drop zone (click a column up top)
+    local dropRow = New("Frame", {Size = UDim2.fromOffset(boardW, 26), Position = UDim2.fromOffset(0, 0), BackgroundTransparency = 1, Parent = gwBody})
+    local arrows = {}
+    for c = 0, C4W - 1 do
+        local a = New("TextButton", {Size = UDim2.fromOffset(cs - 4, 22), Position = UDim2.fromOffset(2 + c * cs, 2), BackgroundColor3 = PAL.card2, Text = "v", TextColor3 = PAL.dim, Font = FONTB, TextSize = 14, AutoButtonColor = false, Parent = dropRow})
+        corner(a, 6)
+        arrows[c] = a
+    end
+    local board = box(gwBody, UDim2.fromOffset(boardW, boardH), UDim2.fromOffset(0, 30), Color3.fromRGB(28, 60, 110), 10)
+    stroke(board, PAL.line)
+    local slots = {}
+    for y = 0, C4H - 1 do for x = 0, C4W - 1 do
+        local hole = New("Frame", {Size = UDim2.fromOffset(cs - 6, cs - 6), Position = UDim2.fromOffset(5 + x * cs, 5 + y * cs), BackgroundColor3 = Color3.fromRGB(16, 36, 68), BorderSizePixel = 0, Parent = board})
+        corner(hole, (cs - 6) / 2)
+        slots[y * C4W + x + 1] = hole
+    end end
+    local discs = {}
+    local function status()
+        if over then return end
+        if turn == mySide then setStatus("your turn  (" .. (mySide == 1 and "red" or "blue") .. ")", mySide == 1 and C4COL1 or C4COL2)
+        else setStatus(ses and "opponent's turn..." or "bot is thinking...", PAL.dim) end
+    end
+    local function winHighlight(line)
+        for _, i in ipairs(line) do
+            local d = discs[i]
+            if d then stroke(d, PAL.good, 3, 0) end
+        end
+    end
+    local function drop(x, side)
+        local col, y = C4.drop(b, x, side)
+        if not col then return false end
+        local i = y * C4W + x + 1
+        local hole = slots[i]
+        local d = New("Frame", {Size = UDim2.fromOffset(cs - 10, cs - 10), AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, 0, 0.5, 0), BackgroundColor3 = side == 1 and C4COL1 or C4COL2, BorderSizePixel = 0, Parent = hole})
+        corner(d, (cs - 10) / 2)
+        discs[i] = d
+        -- drop animation: start above the board and fall into place
+        local startY = -((y + 1) * cs)
+        d.Position = UDim2.new(0.5, 0, 0.5, startY)
+        tweenTo(d, 0.28 + y * 0.015, {Position = UDim2.new(0.5, 0, 0.5, 0)}, Enum.EasingStyle.Bounce)
+        local win = C4.winLine(b, x, y)
+        if win then
+            over = true
+            winHighlight(win)
+            local me = side == mySide
+            setStatus(me and "you win!" or "you lose", me and PAL.good or PAL.bad)
+        elseif C4.full(b) then
+            over = true; setStatus("draw", PAL.warn)
+        else
+            turn = side == 1 and 2 or 1; status()
+        end
+        return true
+    end
+    local function botMove()
+        task.spawn(function()
+            task.wait(0.4)
+            if not alive or over or turn == mySide then return end
+            local col = C4.bot(b, 2, diff, rng)
+            drop(col, 2)
+        end)
+    end
+    for c = 0, C4W - 1 do
+        Connect(arrows[c].MouseEnter, function() if not C4.colFull(b, c) and turn == mySide and not over then Tween(arrows[c], TWEEN_FAST, {BackgroundColor3 = PAL.hover}) end end)
+        Connect(arrows[c].MouseLeave, function() Tween(arrows[c], TWEEN_FAST, {BackgroundColor3 = PAL.card2}) end)
+        Connect(arrows[c].MouseButton1Click, function()
+            if over or turn ~= mySide or C4.colFull(b, c) then return end
+            if drop(c, mySide) then
+                if ses then NET.pub(ses.topic, {t = "m", x = c})
+                elseif not over then botMove() end
+            end
+        end)
+    end
+    local ctl = {ses = ses, destroy = function() alive = false end}
+    if ses then
+        ctl.onNet = function(m)
+            if m.t == "m" and type(m.x) == "number" then
+                if turn ~= mySide and not over then drop(m.x, mySide == 1 and 2 or 1) end
+            elseif m.t == "quit" and not over then over = true; setStatus("opponent left - you win", PAL.good) end
+        end
+    else
+        button(gwBody, "new game", UDim2.fromOffset(92, 22), UDim2.new(1, -92, 0, boardH + 6), function() MG.start("c4", diff) end, "primary", Color3.fromRGB(255, 196, 84), 10)
+    end
+    status()
+    return ctl
+end
+
 ------------------------------------------------------------------ BATTLESHIP (Russian fleet: 1x4, 2x3, 3x2, 4x1; ships may not touch)
 local C_WATER, C_MISS, C_HIT, C_SUNK, C_SHIP, C_PEND = Color3.fromRGB(24, 40, 66), Color3.fromRGB(46, 70, 104), Color3.fromRGB(232, 122, 52), Color3.fromRGB(190, 56, 68), Color3.fromRGB(104, 122, 152), Color3.fromRGB(200, 190, 90)
 local SHIPTYPES = {{len = 4, name = "Battleship", count = 1}, {len = 3, name = "Cruiser", count = 2}, {len = 2, name = "Destroyer", count = 3}, {len = 1, name = "Boat", count = 4}}
@@ -11006,11 +11298,46 @@ local DINO_DUCK = {
     "..........########..", ".........##########.", ".........##e#######.", ".........###########", "#........##########.", "##.....############.",
     "###..##############.", "####################", ".##################.", "..################..", "....##........##....", "....##........##....",
 }
-local CACT_S = {"..##..", "..##..", "#.##.#", "#.##.#", "######", "..##..", "..##..", "..##..", "..##..", "..##..", "..##..", "..##..", "..##.."}
-local CACT_L = {"...##...", "...##...", "#..##..#", "#..##..#", "#..##..#", "##.##.##", ".######.", "..####..", "...##...", "...##...", "...##...", "...##...", "...##...", "...##...", "...##...", "...##...", "...##...", "...##..."}
+local CACT_S = {
+    "..#+..", "..#+..", "..#+..", ".##+..", "####..", ".##+..",
+    "..#+..", "..#+..", "..#+..", "..#+..", "..#+..", "..#+..", "..#+..",
+}
+local CACT_L = {
+    "...#+...", "...#+...", "...#+...", "..##+...", ".###+...", ".###+...", "..##+...",
+    "...#+...", "...#+..#", "...#+.##", "...#+.##", "...#+..#",
+    "...#+...", "...#+...", "...#+...", "...#+...", "...#+...", "...#+...",
+}
 local BIRD_UP = {"......##........", "......###.......", "...##.####......", "..###########.#.", "###############.", "..###########...", "....######......", "................"}
 local BIRD_DN = {"................", "...........##...", "..###########.#.", "###############.", "..###########...", "....######......", "....###..###....", "....##....##...."}
 local CLOUD = {"....####......", "..########....", ".###########..", "##############"}
+------------------------------------------------------------------ DINO RUN - shared leaderboard (this server, this session)
+MG.dinoLB = {}   -- name -> best score
+local LB_TOPIC = "dinolb"
+local lbSeen = 0
+function MG.dinoReport(score)
+    local me = LocalPlayer.Name
+    if (MG.dinoLB[me] or -1) < score then MG.dinoLB[me] = score end
+    NET.pub(LB_TOPIC, {t = "score", s = score})
+end
+local function lbPump()
+    local list, cur = NET.poll(LB_TOPIC, lbSeen)
+    lbSeen = cur
+    for _, m in ipairs(list) do
+        if m.t == "score" and type(m.s) == "number" and Players:FindFirstChild(m.u) then
+            if (MG.dinoLB[m.u] or -1) < m.s then MG.dinoLB[m.u] = m.s end
+        end
+    end
+end
+function MG.dinoTop(n)
+    lbPump()
+    local rows = {}
+    for nm, sc in pairs(MG.dinoLB) do rows[#rows + 1] = {nm, sc} end
+    table.sort(rows, function(a, b) return a[2] > b[2] end)
+    local out = {}
+    for i = 1, math.min(n or 10, #rows) do out[i] = rows[i] end
+    return out
+end
+
 function MG.dino(diff, ses)
     local W, H, GY = 340, 140, 118
     local rng = LG.RNG(ses and ses.seed or math.random(1, 2000000000))
@@ -11082,7 +11409,7 @@ function MG.dino(diff, ses)
         else
             local r = rng(4)
             o.kind = "cactus"; o.yb = 0
-            local cp = {["#"] = CACT}
+            local cp = {["#"] = CACT, ["+"] = CACT:Lerp(Color3.new(0, 0, 0), 0.4)}
             if r == 1 then o.w, o.h = 12, 26; pixels(f, CACT_S, cp, 2, 0, 0)
             elseif r == 2 then o.w, o.h = 16, 36; pixels(f, CACT_L, cp, 2, 0, 0)
             elseif r == 3 then o.w, o.h = 30, 26; pixels(f, CACT_S, cp, 2, 0, 0); pixels(f, CACT_S, cp, 2, 18, 0)
@@ -11116,6 +11443,8 @@ function MG.dino(diff, ses)
         msg.Text = "GAME OVER  -  space / tap to restart"
         if st.score > best then best = st.score; CFG.dinoHi = best; saveCFG() end
         sendProgress(true)
+        MG.dinoReport(st.score)
+        if lbPanel then lbRefresh() end
         if ses then
             if oppFin then resolve() else setStatus("waiting for opponent to finish... (you: " .. st.score .. ")", PAL.dim) end
             msg.Text = "GAME OVER"
@@ -11147,6 +11476,28 @@ function MG.dino(diff, ses)
     Connect(duckBtn.InputBegan, function(i) if IsPress(i) then st.duck = true end end)
     Connect(duckBtn.InputEnded, function(i) if IsPress(i) then st.duck = false end end)
     button(gwBody, "jump", UDim2.fromOffset(110, 24), UDim2.fromOffset(W - 109, H + 8), function() jump() end, "primary", ACC.dino, 10)
+    local lbPanel, lbList
+    local function lbRefresh()
+        if not lbPanel then return end
+        for _, ch in ipairs(lbList:GetChildren()) do ch:Destroy() end
+        local top = MG.dinoTop(8)
+        if #top == 0 then txt(lbList, "no scores yet this server - play a round!", UDim2.new(1, -8, 0, 16), UDim2.fromOffset(4, 0), 9, PAL.dim)
+        else
+            for i, row in ipairs(top) do
+                local mine = row[1] == LocalPlayer.Name
+                txt(lbList, string.format("%d. %s", i, row[1]), UDim2.new(1, -60, 0, 16), UDim2.fromOffset(4, (i - 1) * 16), 9, mine and ACC.dino or PAL.text, nil, mine)
+                txt(lbList, tostring(row[2]), UDim2.new(0, 50, 0, 16), UDim2.new(1, -54, 0, (i - 1) * 16), 9, PAL.dim, Enum.TextXAlignment.Right)
+            end
+        end
+    end
+    button(gwBody, "leaderboard", UDim2.fromOffset(W + 2, 20), UDim2.fromOffset(0, H + 36), function()
+        if lbPanel then lbPanel:Destroy(); lbPanel = nil; return end
+        lbPanel = box(gwBody, UDim2.fromOffset(W + 2, 140), UDim2.fromOffset(0, H + 60), PAL.card, 8)
+        stroke(lbPanel, PAL.line)
+        txt(lbPanel, "TOP SCORES (this server)", UDim2.new(1, -8, 0, 14), UDim2.fromOffset(4, 2), 9, ACC.dino, nil, true)
+        lbList = New("Frame", {Size = UDim2.new(1, -8, 1, -20), Position = UDim2.fromOffset(4, 18), BackgroundTransparency = 1, Parent = lbPanel})
+        lbRefresh()
+    end, "ghost", nil, 9)
     local frame = 0
     local conn
     conn = RunService.RenderStepped:Connect(function()
@@ -11227,6 +11578,7 @@ function MG.start(game, diff, ses)
     if game == "ms" then ctl = MG.minesweeper(diff, ses)
     elseif game == "ttt" then ctl = MG.ttt(diff, ses)
     elseif game == "bs" then ctl = MG.battleship(diff, ses)
+    elseif game == "c4" then ctl = MG.c4(diff, ses)
     else ctl = MG.dino(diff, ses) end
     ctl.kind = ctl.kind or game
     MG.cur = ctl
@@ -11242,7 +11594,7 @@ end
 
 ------------------------------------------------------------------ lobby (host / find / join)
 MG.lobbies = {}
-local GNAMES = {ms = "Minesweeper", ttt = "Tic Tac Toe", bs = "Battleship", dino = "Dino Run"}
+local GNAMES = {ms = "Minesweeper", ttt = "Tic Tac Toe", bs = "Battleship", dino = "Dino Run", c4 = "Connect Four"}
 function MG.host(game, diff)
     if MG.hosting then MG.hosting.alive = false end
     local id = newId()
@@ -11354,6 +11706,7 @@ local function updateDesc()
     descLbls.ttt.Text = "3x3 board, bot level " .. MG.diff .. "/4 (4 = unbeatable)"
     descLbls.bs.Text = "10x10 fleet battle, bot level " .. MG.diff .. "/4"
     descLbls.dino.Text = "obstacle speed level " .. MG.diff .. "/4"
+    if descLbls.c4 then descLbls.c4.Text = "7x6 grid, bot level " .. MG.diff .. "/4" end
 end
 local function selectDiff(d)
     MG.diff = d
@@ -11391,6 +11744,7 @@ end
 gameCard("ms", "Minesweeper", "MS")
 gameCard("ttt", "Tic Tac Toe", "XO")
 gameCard("bs", "Battleship", "BS")
+gameCard("c4", "Connect Four", "C4")
 gameCard("dino", "Dino Run", "DR")
 -- lobby
 section("online lobby")
@@ -11490,8 +11844,8 @@ local DEFS = {
     {id = "knifesilent", name = "knife silent aim", def = "J", toggle = "knife throw silent aim"},
     {id = "fakepos", name = "fake position", def = "P", toggle = "fake position"},
     {id = "autogun",  name = "auto get gun",    def = "O", toggle = "auto get gun"},
-    {id = "touchfling", name = "touch fling",   def = "F7", toggle = "touch fling"},
-    {id = "minigames",name = "minigames panel", def = "F6", act = function() X.MG.setOpen(not X.MG.open) end, state = function() return X.MG.open end},
+    {id = "touchfling", name = "touch fling",   def = "F", toggle = "touch fling"},
+    {id = "minigames",name = "minigames panel", def = "I", act = function() X.MG.setOpen(not X.MG.open) end, state = function() return X.MG.open end},
     {id = "hud",      name = "hotkey hud",      def = "H", act = function() HK.setHud(not HK.hudOn) end, state = function() return HK.hudOn end},
 }
 for _, d in ipairs(DEFS) do
@@ -11595,6 +11949,19 @@ if not __ok then warn("[piddle] module 'hotkeys' failed: "..tostring(__err)); pc
 local SettingsTab = Win:AddTab({Name="settings", Subtitle="ui config"})
 local BgSec = SettingsTab:AddSection({Name="background", Side="Left"})
 local bgNames={}; for k in pairs(BG_LIST) do table.insert(bgNames,k) end; table.sort(bgNames)
+local bg_dens, bg_speed, bg_lineMax, bg_ballSize, bg_dotColor, bg_lineColor, bg_triColor
+local function updateBgVis(v)
+    local img = BG_LIST[v] or ""
+    local isTri = img:find("^anim:tri") ~= nil
+    local isNet = img:find("^anim:net") ~= nil
+    if bg_dens then bg_dens.Row.Visible = isTri or isNet end
+    if bg_speed then bg_speed.Row.Visible = isTri or isNet end
+    if bg_lineMax then bg_lineMax.Row.Visible = isNet end
+    if bg_ballSize then bg_ballSize.row.Visible = isNet end
+    if bg_dotColor then bg_dotColor.Row.Visible = isNet end
+    if bg_lineColor then bg_lineColor.Row.Visible = isNet end
+    if bg_triColor then bg_triColor.Row.Visible = isTri end
+end
 BgSec:AddDropdown({Name="background", Values=bgNames, Default=CFG.bgName, Callback=function(v)
     CFG.bgName=v; saveCFG()
     local img=BG_LIST[v] or ""
@@ -11607,18 +11974,20 @@ BgSec:AddDropdown({Name="background", Values=bgNames, Default=CFG.bgName, Callba
     end
     if Win.BgImage then Win.BgImage.Image=img end
     if wmBg then wmBg.Image=img end
+    updateBgVis(v)
 end})
 BgSec:AddSlider({Name="bg transparency", Min=0, Max=100, Default=40, Callback=function(v)
     if Win.BgImage then Win.BgImage.ImageTransparency=v/100 end
     if wmBg then wmBg.ImageTransparency=math.min(0.8,v/100+0.1) end
 end})
-BgSec:AddSlider({Name="wallpaper density", Min=6, Max=40, Default=X.ANIM.count, Callback=function(v) X.ANIM.count=v; CFG.triCount=v; saveCFG(); if X.ANIM.on then X.ANIM.build() end end})
-BgSec:AddSlider({Name="wallpaper speed", Min=20, Max=300, Default=X.ANIM.speed, Callback=function(v) X.ANIM.speed=v; CFG.triSpeed=v; saveCFG() end})
-BgSec:AddSlider({Name="line max length", Min=30, Max=400, Default=X.ANIM.lineMax, Callback=function(v) X.ANIM.lineMax=v; CFG.netLineMax=v; saveCFG() end})
-Library.AddRangeSlider(BgSec, {Name="ball size", Min=0.1, Max=10, Increment=0.1, DefaultMin=X.ANIM.sizeMin, DefaultMax=X.ANIM.sizeMax, Callback=function(lo, hi) X.ANIM.sizeMin=lo; X.ANIM.sizeMax=hi; CFG.netSizeMin=lo; CFG.netSizeMax=hi; saveCFG() end})
-BgSec:AddColorPicker({Name="dot color", Default=X.ANIM.dotColor or Theme.Accent, Callback=function(c) X.ANIM.setDotColor(c) end})
-BgSec:AddColorPicker({Name="line color", Default=X.ANIM.lineColor or Theme.Accent, Callback=function(c) X.ANIM.setLineColor(c) end})
-BgSec:AddColorPicker({Name="triangle color", Default=X.ANIM.color or Color3.fromRGB(235,235,245), Callback=function(c) X.ANIM.recolor(c) end})
+bg_dens = BgSec:AddSlider({Name="wallpaper density", Min=6, Max=40, Default=X.ANIM.count, Callback=function(v) X.ANIM.count=v; CFG.triCount=v; saveCFG(); if X.ANIM.on then X.ANIM.build() end end})
+bg_speed = BgSec:AddSlider({Name="wallpaper speed", Min=20, Max=300, Default=X.ANIM.speed, Callback=function(v) X.ANIM.speed=v; CFG.triSpeed=v; saveCFG() end})
+bg_lineMax = BgSec:AddSlider({Name="line max length", Min=30, Max=400, Default=X.ANIM.lineMax, Callback=function(v) X.ANIM.lineMax=v; CFG.netLineMax=v; saveCFG() end})
+bg_ballSize = Library.AddRangeSlider(BgSec, {Name="ball size", Min=0.1, Max=10, Increment=0.1, DefaultMin=X.ANIM.sizeMin, DefaultMax=X.ANIM.sizeMax, Callback=function(lo, hi) X.ANIM.sizeMin=lo; X.ANIM.sizeMax=hi; CFG.netSizeMin=lo; CFG.netSizeMax=hi; saveCFG() end})
+bg_dotColor = BgSec:AddColorPicker({Name="dot color", Default=X.ANIM.dotColor or Theme.Accent, Callback=function(c) X.ANIM.setDotColor(c) end})
+bg_lineColor = BgSec:AddColorPicker({Name="line color", Default=X.ANIM.lineColor or Theme.Accent, Callback=function(c) X.ANIM.setLineColor(c) end})
+bg_triColor = BgSec:AddColorPicker({Name="triangle color", Default=X.ANIM.color or Color3.fromRGB(235,235,245), Callback=function(c) X.ANIM.recolor(c) end})
+updateBgVis(CFG.bgName)
 BgSec:AddSlider({Name="ui scale", Min=50, Max=150, Default=CFG.uiScale, Callback=function(v)
     CFG.uiScale = v
     Win._baseScale = v/100
